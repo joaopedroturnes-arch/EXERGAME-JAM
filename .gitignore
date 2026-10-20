@@ -1,0 +1,15 @@
+# Ambiente e saída do build (gerados por build_windows.bat / build_linux.sh)
+.venv/
+build/
+dist/
+EcoRunner/
+*.zip
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Dados locais do jogo (recorde, config)
+save/
+*.bak

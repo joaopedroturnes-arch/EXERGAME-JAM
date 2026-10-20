@@ -1,0 +1,78 @@
+{
+  "models": [
+    {
+      "key": "dart",
+      "label": "1. Jato Alongado (Com Clipe)"
+    },
+    {
+      "key": "glider",
+      "label": "2. Planador Largo"
+    },
+    {
+      "key": "stubby",
+      "label": "3. Asa Curta e Ponta Larga"
+    },
+    {
+      "key": "binder",
+      "label": "4. Avião de Fichário"
+    },
+    {
+      "key": "needle",
+      "label": "5. Bico Agulha (Tilibra Escrito)"
+    },
+    {
+      "key": "hoverboard",
+      "label": "6. Hoverboard (Asa Retangular)"
+    },
+    {
+      "key": "crane",
+      "label": "7. Tsuru / Pássaro (Artigo Médico)"
+    },
+    {
+      "key": "accordion",
+      "label": "8. Planador Sanfona (Zig-Zag)"
+    },
+    {
+      "key": "jetfighter",
+      "label": "9. Caça Realista (Com Leme e Cauda)"
+    },
+    {
+      "key": "tailboom",
+      "label": "10. Planador de Haste Longa"
+    },
+    {
+      "key": "bis14",
+      "label": "11. 14-Bis (Miniatura de Papelão)"
+    }
+  ],
+  "pilots": [
+    {
+      "key": "none",
+      "label": "Sem piloto"
+    },
+    {
+      "key": "riding",
+      "label": "Montado"
+    },
+    {
+      "key": "surfing",
+      "label": "Surfando"
+    },
+    {
+      "key": "zen",
+      "label": "Zen"
+    },
+    {
+      "key": "waving",
+      "label": "Acenando"
+    },
+    {
+      "key": "superman",
+      "label": "Super-herói"
+    },
+    {
+      "key": "wheelchair",
+      "label": "Cadeira de rodas"
+    }
+  ]
+}

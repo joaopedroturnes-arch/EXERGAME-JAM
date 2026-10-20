@@ -1,0 +1,39 @@
+newmtl green
+Kd 1.0 1.0 1.0
+Ka 0.15 0.15 0.15
+Ks 0.18 0.18 0.18
+Ns 48
+illum 2
+map_Kd textures/green.png
+
+newmtl darkgreen
+Kd 1.0 1.0 1.0
+Ka 0.15 0.15 0.15
+Ks 0.18 0.18 0.18
+Ns 48
+illum 2
+map_Kd textures/darkgreen.png
+
+newmtl steel
+Kd 1.0 1.0 1.0
+Ka 0.15 0.15 0.15
+Ks 0.18 0.18 0.18
+Ns 48
+illum 2
+map_Kd textures/steel.png
+
+newmtl brass
+Kd 1.0 1.0 1.0
+Ka 0.15 0.15 0.15
+Ks 0.18 0.18 0.18
+Ns 48
+illum 2
+map_Kd textures/brass.png
+
+newmtl white
+Kd 1.0 1.0 1.0
+Ka 0.15 0.15 0.15
+Ks 0.18 0.18 0.18
+Ns 48
+illum 2
+map_Kd textures/white.png

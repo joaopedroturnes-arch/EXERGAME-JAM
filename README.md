@@ -1,0 +1,545 @@
+# Eco Runner
+
+Jogo de voo em visual pseudo-3D, feito em Python e Pygame. O jogador pilota um avião de papel
+por uma pista e coleta lixo para restaurar o ambiente. Conforme a restauração sobe, a paisagem
+muda: da cidade dieselpunk poluída ao cenário solarpunk Art Nouveau.
+
+## O jogo
+
+### Avião e piloto
+
+O avião de papel voa em todas as direções: para os lados (← / →), para cima e para baixo. O lixo
+e os obstáculos aparecem em três faixas da pista, mas o avião não fica preso a elas. Ele fica dentro
+dos limites laterais da pista e com a altura (ALT, mostrada no HUD) entre 22 e 155.
+
+Os aviões vêm do "Estúdio 3D Aviões, 14-Bis & Piloto Customizável", na versão com os **modelos
+refinados** (malhas mais detalhadas, dobras e marcas do papel). São 11 modelos:
+
+1. Jato Alongado (Com Clipe)
+2. Planador Largo
+3. Asa Curta e Ponta Larga
+4. Avião de Fichário
+5. Bico Agulha
+6. Hoverboard (Asa Retangular)
+7. Tsuru / Pássaro
+8. Sanfona
+9. Caça Realista
+10. Planador de Haste Longa
+11. 14-Bis (Miniatura de Papelão)
+
+O boneco em cima do avião é só customização e não muda a jogabilidade. São 7 opções de piloto:
+
+- Sem piloto
+- Boneco montado
+- Boneco surfando
+- Boneco zen
+- Boneco acenando
+- Boneco super-herói
+- Boneco na cadeira de rodas
+
+A escolha de avião e piloto é feita no **Hangar** (tela inicial). Ao decolar (ENTER ou ESPAÇO), a
+escolha é salva em `eco_runner_config.json`, na pasta de dados (ver "Onde ficam o recorde, os logs
+e os relatórios"), e é reaberta na próxima vez que o jogo iniciar. O padrão é o Jato Alongado com o
+boneco montado.
+
+### Oficina de pintura
+
+No hangar, a tecla **C** abre a **Oficina de pintura**, onde se escolhe a cor do avião. A cor é
+aplicada só ao papel: o piloto, as rodas de madeira e as outras peças que não são de papel continuam
+como estão, e as dobras e marcas do papel continuam visíveis por baixo da tinta. A prévia aparece na
+hora, em 3/4 (como no hangar) e vista de trás (como no voo).
+
+Cores disponíveis: Original do estúdio, Branco papel, Vermelho, Laranja, Amarelo, Verde, Verde-água,
+Ciano, Azul, Anil, Roxo, Rosa, Dourado, Papelão kraft e Grafite. "Original do estúdio" mostra o avião
+com as cores padrão do estúdio, sem tinta.
+
+Cada avião lembra a sua cor. ENTER, ESPAÇO ou C confirmam e salvam a escolha em
+`eco_runner_config.json` (chave `cores`); ESC cancela e volta à cor anterior.
+
+### Eras
+
+**Quatro eras**, trocadas conforme a restauração ambiental aumenta:
+
+| Era | Restauração necessária |
+|---|---|
+| Era I: Dieselpunk Industrial | a partir de 0% (início) |
+| Era II: Poluição Corporativa | 25% |
+| Era III: Despertar Ecológico | 50% |
+| Era IV: Solarpunk Art Nouveau | 75% |
+
+### Restauração, coleta, combo e vidas
+
+**Restauração**: começa em 5%, com teto de 100%. Cada lixo coletado soma +2,1%
+(+2,35% quando o combo está em x4 ou mais).
+
+**Coleta de lixo**: cada lixo vale 15 pontos × o combo atual. O lixo é coletado ao encostar no avião,
+ou pelo ímã (ver power-ups).
+
+**Combo**: a cada 4 lixos coletados em sequência, o combo sobe 1, até x8.
+O combo zera ao bater em um obstáculo ou quando passam 2,2 s sem coletar lixo.
+
+**Vidas**: 3. Ao bater em um obstáculo, o jogador perde uma vida, fica invulnerável por
+1,25 s e o combo zera. Sem vidas, a partida termina.
+
+### Obstáculos e manobras
+
+| Obstáculo | Modelos (pasta `modelos_3d`) | Como passar |
+|---|---|---|
+| Tambores, caçamba, sucata e monte de lixo | 05 Tambores, 08 Caçamba, 07 Pilha de sucata, 06 Monte de lixo | **Voe por cima**: acima de cerca de 117 de ALT (tambores), 113 (caçamba) ou 97 (sucata e monte de lixo) |
+| Rede de tubos com válvula | 04 Rede de tubos com válvula | **Passe por baixo**: abaixo de cerca de 88 de ALT |
+| Chaminé e caldeira | 02 Chaminé, 03 Caldeira | **Desvie para o lado**: ocupam a pista em toda a altura |
+
+Os valores de ALT são aproximados e vêm do tamanho da colisão do avião e do obstáculo.
+
+**Lixo em três alturas**: o lixo flutua em três alturas (baixa, média e alta). Para coletá-lo, o avião
+precisa encostar nele. O lixo baixo é alcançado até cerca de ALT 79, o médio entre cerca de 41 e 135,
+e o alto a partir de cerca de 93.
+
+**Sombra e altitude**: o avião e o lixo projetam sombra no chão. Quanto maior a distância entre o
+objeto e a sombra, mais alto ele está. A sombra do avião fica mais clara à medida que ele sobe. O HUD
+mostra a altura exata em `ALT`.
+
+### Power-ups
+
+Aparecem na pista e são pegos ao passar sobre eles:
+
+- **Escudo**: 6 s em que as colisões não tiram vida.
+- **Ímã**: 7 s em que o lixo que passa perto do avião é coletado sozinho. Vale para lixo a menos de
+  1,1 faixa de distância lateral e a menos de 110 unidades de altura.
+- **Reparo**: +1 vida, se o jogador tiver menos de 3. Com as 3 vidas, recupera +3% de restauração.
+
+### Quais modelos aparecem onde
+
+| Elemento | Modelos | Onde aparecem |
+|---|---|---|
+| Props Dieselpunk | 01 Fábrica, 02 Chaminé, 03 Caldeira, 04 Rede de tubos com válvula, 05 Tambores, 06 Monte de lixo, 07 Pilha de sucata, 08 Caçamba | Fileira de fundo das margens nas eras I e II, intercalados com as estruturas do kit. Chaminé, caldeira, tubos, tambores, monte de lixo, sucata e caçamba também são obstáculos (tabela acima). A fábrica aparece só na margem. |
+| Kit Dieselpunk_Scenario | 28 modelos de `modelos_3d/Dieselpunk_Scenario` | Eras I e II. Fileira junto à pista: tambor de combustível, caixa, carretel de cabo, painel de controle, tubos de vapor, gerador, compressor, passarela e luz âmbar. Fileira de fundo: torre industrial, guindaste, silo, chaminé, tanque de pressão, paredes de fábrica, elevador de carga, ventilador, escada, suporte, portão de hangar, torre de energia e fábrica distante. |
+| Silhuetas do horizonte | silo, fábrica distante, torre de energia, torre industrial, chaminé, guindaste, tanque e elevador do kit; árvores Solarpunk 01 a 10 | Horizonte, em duas fileiras. As silhuetas industriais viram árvores conforme a restauração sobe. |
+| Céu e nuvens | panorama de céu poluído e nuvem de fumaça do kit | Céu das eras poluídas. Somem aos poucos com a restauração, dando lugar ao céu da era e a nuvens claras. |
+| Árvores Solarpunk | 01 a 10 | Margens das eras III e IV, com restauração de 50% ou mais, nos trechos já purificados: na fileira de fundo e, menores, na borda da pista. Fora deles, a margem mostra os modelos industriais. |
+| Grama | textura gerada por `tools/make_grass_texture.py` | Chão fora da pista nas eras III e IV, a partir de 50% de restauração, do avião até a frente de restauração: o mesmo trecho em que as árvores aparecem. Além dela, concreto sujo. |
+| Concreto sujo | textura gerada por `tools/make_concrete_texture.py` | Chão fora da pista em toda a fase inicial (eras I e II) e, a partir de 50%, além da frente de restauração. |
+| Lixo coletável | 10 modelos de sucata (lista em `trash_sprites/`, abaixo) | Pista, em três alturas |
+| Aviões | 11 modelos do Estúdio (lista na seção Avião e piloto) | Hangar e voo |
+| Power-ups | escudo, ímã e reparo (sprites em `powerup_sprites/`) | Pista |
+
+Os modelos de props, árvores, sucata e obstáculos aparecem em **ordem fixa**, sem sorteio: cada
+tipo segue sua sequência e se repete em ciclo. Continuam sorteados a cada partida: a faixa e a altura
+do lixo, o tipo de obstáculo (baixo, rede ou torre), a faixa de cada obstáculo, o tipo e a faixa dos
+power-ups e o espaçamento entre os padrões na pista.
+
+### Câmera, paralaxe e velocidade
+
+A câmera acompanha parte do movimento lateral do avião, e o cenário é dividido em camadas que se
+deslocam em ritmos diferentes: quanto mais longe, mais devagar. Assim, ao mover o avião para os lados,
+fica claro que é ele que se move, e não o cenário.
+
+| Camada | O que contém | Como se move |
+|---|---|---|
+| Céu | panorama de céu poluído com o sol | quase parado: desloca-se pouquíssimo com a câmera e tem deriva muito lenta |
+| Nuvens | fumaça (eras poluídas) ou nuvens claras | um pouco mais rápidas que o céu, cada nuvem no seu ritmo |
+| Distante | duas fileiras de silhuetas dos modelos no horizonte | poucos pixels com a câmera e deriva lenta; a fileira de trás anda pouco mais da metade da da frente |
+| Média | fileira de fundo das margens (estruturas grandes ou árvores) | metade do deslocamento lateral da câmera |
+| Borda | fileira junto à pista (peças pequenas ou árvores menores) | 80% do deslocamento lateral da câmera |
+| Próxima | pista, faixas, lixo, obstáculos, power-ups e avião | deslocamento lateral completo da câmera |
+
+**Neblina**: a pista e os objetos se misturam à cor do horizonte com a distância. Os objetos surgem aos
+poucos no fundo, em vez de aparecer de repente no fim da pista.
+
+**Movimento contínuo**: cada trecho da pista mantém a sua cor e os seus objetos até sair da tela. Nas
+versões anteriores, as faixas da pista trocavam de cor e os prédios das margens pulavam de posição
+cerca de 5 vezes por segundo, o que dava a impressão de tremor. O passo de tempo do jogo também é
+suavizado, para o cenário não tremer com as pequenas variações do relógio.
+
+**Desempenho**: os sprites são reduzidos a partir de versões pré-reduzidas, objetos fora da tela não são
+desenhados, e as silhuetas do horizonte são refeitas aos poucos, em vários quadros. Os sprites são
+preparados enquanto o hangar está aberto. O chão com textura só é desenhado nas laterais da pista. No ambiente de teste, um quadro leva em média
+cerca de 11 ms (9 ms antes do cenário novo), com bem mais objetos na tela.
+
+**Concreto sujo**: na fase inicial, o chão fora da pista é de concreto: placas com juntas, manchas de
+óleo, rachaduras, fuligem e pontos de ferrugem. As juntas paralelas à pista são desenhadas em perspectiva
+e a textura desliza junto com a pista, como a grama.
+
+**Grama**: a partir de 50% de restauração, o chão fora da pista vira grama com textura (tufos, manchas
+claras e escuras e pequenas flores) desde o avião até a frente de restauração, onde as árvores começam.
+Uma linha escura marca essa borda. A grama é desenhada em perspectiva, desliza junto com a pista e
+acompanha a câmera como a pista. Quanto mais a restauração sobe, mais longe a grama chega.
+
+O céu poluído e a fumaça vão sumindo entre 20% e 65% de restauração. No mesmo intervalo, as silhuetas
+industriais do horizonte se transformam em árvores.
+
+A pista começa a cerca de 463 unidades por segundo e acelera com a restauração (+0,6 por ponto
+percentual) e com o tempo de partida (até +50 nos primeiros 3 minutos), até o máximo de 570.
+
+A câmera e a paralaxe mudam só o desenho: as colisões continuam calculadas na posição real do avião.
+Os valores podem ser ajustados (ver "Ajustar câmera, paralaxe e velocidade").
+
+## Controles
+
+### No hangar
+
+| Ação | Teclas |
+|---|---|
+| Trocar de avião | ← / → ou A / D |
+| Trocar de piloto | ↑ / ↓ ou W / S |
+| Abrir a Oficina de pintura | C |
+| Decolar | ENTER ou ESPAÇO |
+
+### Na Oficina de pintura
+
+| Ação | Teclas |
+|---|---|
+| Escolher a cor | ← / → ou A / D (↑ / ↓ e W / S também) |
+| Confirmar e salvar | ENTER, ESPAÇO ou C |
+| Cancelar | ESC |
+
+### No voo
+
+| Ação | Teclas |
+|---|---|
+| Ir para a esquerda | ← ou A |
+| Ir para a direita | → ou D |
+| Subir | ↑, W ou ESPAÇO |
+| Descer | ↓ ou S |
+| Pausar e continuar | P ou ESC |
+| Voltar ao hangar (na pausa ou no game over) | C ou TAB |
+| Mostrar hitboxes (depuração) | F3 |
+
+Os comandos de voo são contínuos: o avião responde enquanto a tecla estiver pressionada.
+
+### Fim de jogo e nova partida
+
+No game over, ENTER ou ESPAÇO voa de novo com o mesmo avião e piloto, e o recorde é mantido. C ou TAB
+volta ao hangar para trocar o avião ou o piloto.
+
+## Ajustar câmera, paralaxe e velocidade
+
+Os valores ficam em constantes no começo do `eco_runner.py`. Depois de mudar, rode pelo Python para
+conferir e recompile para atualizar o executável: o `.exe` em `dist\` não muda sozinho.
+
+| Constante | Valor | Efeito |
+|---|---|---|
+| `CAMERA_FOLLOW` | 0.35 | Fração do deslocamento lateral do avião que a câmera acompanha. 0 deixa a câmera fixa; valores maiores deixam o avião mais centralizado e fazem o cenário deslizar mais. |
+| `MARGIN_PARALLAX` | 0.8 | Fração do deslocamento da câmera aplicada à fileira junto à pista. |
+| `MID_PARALLAX` | 0.5 | Fração do deslocamento da câmera aplicada à fileira de fundo das margens. 1 iguala essa fileira à pista; 0 deixa as margens sem deslocamento lateral. |
+| `FAR_SHIFT_PX` | 0.25 | Pixels que as silhuetas do horizonte (fileira da frente) se deslocam por unidade de deslocamento da câmera. |
+| `FAR_DRIFT_PX` | 0.03 | Deriva das silhuetas do horizonte, em pixels por unidade de distância percorrida. 0 desliga a deriva. |
+| `FAR_BACK_RATIO` | 0.55 | Velocidade da fileira de trás das silhuetas em relação à da frente. |
+| `CLOUD_SHIFT_PX` | 0.15 | Pixels que as nuvens se deslocam por unidade de deslocamento da câmera (multiplicado pelo ritmo de cada nuvem). |
+| `SKY_SHIFT_PX` | 0.08 | Pixels que o panorama do céu se desloca por unidade de deslocamento da câmera. |
+| `SKY_DRIFT_PX` | 0.004 | Deriva do panorama do céu por unidade de distância percorrida. |
+| `FOG_START` e `FOG_END` | 900 e 2450 | Distância em que a neblina começa e em que os objetos somem por completo. |
+| `POLLUTION_CLEAR_START` e `POLLUTION_CLEAR_END` | 20 e 65 | Faixa de restauração (%) em que o céu poluído e a fumaça somem e o horizonte vira árvores. |
+| `GRASS_START_RESTORATION` | 50 | Restauração (%) a partir da qual a grama aparece (a mesma das árvores). |
+| `CONCRETE_TILE_X` e `CONCRETE_TILE_Z` | 400 e 200 | Tamanho no mundo de cada repetição da textura de concreto (cada placa tem metade disso). |
+| `CONCRETE_JOINTS_X` | 560, 860 e 1200 | Distância das juntas paralelas à pista até o centro (as mesmas dos dois lados). |
+| `GRASS_TILE_X` e `GRASS_TILE_Z` | 240 e 120 | Tamanho no mundo de cada repetição da textura de grama (largura e profundidade). Valores menores deixam os tufos menores. |
+| `MARGIN_X` e `MID_ROW_X` | 480 e 690 | Distância lateral das duas fileiras das margens até o centro da pista. |
+| `BASE_SPEED` | 460 | Velocidade inicial da pista. Valor anterior: 560. |
+| `RESTORATION_SPEED_GAIN` | 0.6 | Velocidade somada por ponto percentual de restauração. Valor anterior: 1.8. |
+| `DIFFICULTY_SPEED_GAIN` | 50 | Velocidade somada ao longo dos primeiros 3 minutos de partida. Valor anterior: 80. |
+
+As velocidades foram reduzidas porque, com os valores anteriores, o fluxo da pista na tela chegava a ser
+mais rápido que o movimento lateral do avião e dava a impressão de que o cenário se movia sozinho.
+
+Para voltar ao movimento anterior, use `CAMERA_FOLLOW = 0`, `FAR_DRIFT_PX = 0`, `SKY_DRIFT_PX = 0` e as
+velocidades 560, 1.8 e 80. O céu, as nuvens e as silhuetas continuam aparecendo, sem acompanhar a
+câmera; as nuvens mantêm a deriva própria.
+
+## Como executar o jogo pronto (Windows)
+
+1. Copie a pasta **`EcoRunner`** inteira (com a subpasta `_internal` e todos os arquivos).
+2. Dê dois cliques em `EcoRunner.exe`.
+
+Não é preciso instalar Python. Distribua a pasta inteira: o `.exe` sozinho não
+funciona no modo onedir. Se o build tiver sido feito com `onefile`, o arquivo
+`EcoRunner.exe` é único e basta ele.
+
+## Como executar pelo Python
+
+Requisitos: Python 3 e Pygame entre 2.5 e 3 (`pygame>=2.5,<3`).
+
+```bash
+pip install -r requirements.txt
+python eco_runner.py
+```
+
+No Linux, use `python3` no lugar de `python` se necessário.
+
+## Nova partida
+
+Veja "Fim de jogo e nova partida" na seção Controles.
+
+## Gerar o modelo 3D da árvore
+
+O jogo pode gerar o modelo Art Nouveau da árvore fotovoltaica em formato OBJ/MTL
+(`solarpunk_tree_alphonse.obj` e `.mtl`).
+
+- **Executável** (Windows): `EcoRunner.exe --generate-3d`
+  grava em `%APPDATA%\EcoRunner\modelos_3d\` e mostra uma janela com os caminhos dos arquivos.
+- **Python**: `python eco_runner.py --generate-3d`
+  grava em `modelos_3d/`, dentro da pasta do projeto.
+- Para escolher outra pasta, acrescente `--output-dir PASTA`, por exemplo:
+  `EcoRunner.exe --generate-3d --output-dir C:\Modelos`.
+
+## Onde ficam o recorde, os logs e os relatórios
+
+| Como o jogo roda | Pasta de dados |
+|---|---|
+| Executável no Windows | `%APPDATA%\EcoRunner\` |
+| Executável no Linux | `~/.local/share/EcoRunner/` (ou `$XDG_DATA_HOME/EcoRunner/`) |
+| Python | `save/` dentro do projeto, se for gravável; caso contrário, a pasta do sistema |
+
+Arquivos gerados nessa pasta:
+
+- `eco_runner_recorde.json`: o recorde.
+- `eco_runner_config.json`: o avião e o piloto escolhidos no hangar (chaves `aviao` e `piloto`) e a cor de
+  cada avião (chave `cores`).
+- `eco_runner_erro.log`: detalhes técnicos quando o jogo fecha por erro inesperado.
+  A mensagem de erro indica esse arquivo.
+- `self_test.json`: relatório do `--self-test`.
+
+Se existir um `eco_runner_recorde.json` ao lado do script (de versões anteriores), ele também é lido,
+e vale o maior recorde encontrado entre os dois. Os novos recordes são gravados só na pasta de dados.
+A variável de ambiente `ECO_RUNNER_DATA_DIR` substitui essa pasta.
+
+## Teste de fumaça (`--self-test`)
+
+```bash
+EcoRunner.exe --self-test 60
+```
+
+Passa pelo hangar e pela Oficina de pintura (sem alterar a cor salva), inicia uma partida e roda N quadros (padrão: 180) com comandos simulados nas
+quatro direções. Grava `self_test.json` com versões, caminhos, sprites carregados e status. Serve para
+verificar se um executável empacotado abre e roda. Não testa a jogabilidade.
+
+## Como recompilar
+
+Requisitos para o build: Python 3 (recomendado 3.10 a 3.13, versões para as quais o Pygame 2.6 publica pacotes prontos) e internet (para baixar `requirements-build.txt`). Se o `pip` tentar compilar o Pygame a partir do código-fonte, instale uma dessas versões do Python.
+
+**Windows** (rode no Windows, dentro da pasta do projeto):
+
+```bat
+build_windows.bat
+build_windows.bat onefile
+build_windows.bat nopause
+```
+
+- `build_windows.bat` gera `dist\EcoRunner\EcoRunner.exe` (onedir, recomendado).
+- `onefile` gera o arquivo único `dist\EcoRunner.exe`.
+- `nopause` não espera tecla no final, útil em automação. Os argumentos podem ser combinados.
+
+**Linux**:
+
+```bash
+./build_linux.sh
+```
+
+Gera `dist/EcoRunner/EcoRunner` (somente onedir).
+
+Os dois scripts apagam `build/` e `dist/` antes de gerar. Eles criam o `.venv` na primeira execução,
+instalam `requirements-build.txt` e rodam o `--self-test`. O `.venv` do Windows e o do Linux não devem ser compartilhados.
+
+O PyInstaller não faz compilação cruzada: o `.exe` precisa ser gerado no Windows, e o binário Linux no Linux.
+Para manter a janela de console (útil para depurar), defina `ECO_CONSOLE=1` antes do build.
+
+## Sprites
+
+Os sprites são PNGs opcionais. Cada arquivo é procurado separadamente, então um sprite faltando não
+impede o jogo de abrir.
+
+| Pasta | Arquivos `.png` esperados | Gerado por | Se faltar |
+|---|---|---|---|
+| `plane_sprites/` | `<modelo>__<piloto>.png`: avião visto de trás, usado na partida (além de `catalog.json`) | `extract_planes.py` | usa o mesmo avião sem piloto (`<modelo>__none`); se também faltar, desenha o avião por código |
+| `plane_menu/` | `<modelo>__<piloto>.png`: avião em 3/4, usado no hangar | `extract_planes.py` | desenha o avião por código |
+| `plane_paint/` e `plane_menu_paint/` | `<modelo>__<piloto>.png`: camada de pintura (o papel visível em branco), do mesmo tamanho do sprite correspondente | `extract_planes.py` | a cor escolhida não aparece no sprite (o avião fica com as cores originais) |
+| `trash_sprites/` | `rusty_can`, `chemical_battery`, `radio_transceiver`, `junkyard_mask`, `shattered_spotlight`, `turbine_debris`, `broken_pipe`, `scrap_heap`, `piston_pump`, `debris_plate` | `render_models.py` (grupo `trash`) | lixo desenhado como círculo |
+| `solarpunk_sprites/` | `01_art_nouveau_solar_tree` até `10_arvore_cristalina` | `render_models.py` (grupo `trees`) | árvore desenhada por código |
+| `dieselpunk_sprites/` | `fabrica`, `chamine`, `caldeira`, `tubos_valvula`, `tambores`, `lixo`, `sucata`, `cacamba` | `render_models.py` (grupo `props`) | props como retângulo escuro; obstáculos como blocos |
+| `powerup_sprites/` | `shield`, `magnet`, `repair` | arquivos próprios | círculo colorido |
+| `scenario_sprites/` | 28 peças do kit Dieselpunk_Scenario, como `fuel_barrel` e `industrial_tower_a` (lista completa em `SCENARIO_SPRITES`, no código) | `render_models.py` (grupo `scenario`) | a peça é pulada; a fileira de fundo usa os props Dieselpunk e, sem eles, retângulos escuros |
+| `skyline_sprites/` | `background_silo`, `distant_factory`, `power_pylon`, `industrial_tower_a`, `industrial_chimney`, `fixed_crane`, `pressure_tank`, `cargo_elevator` | `render_models.py` (grupo `scenario`) | silhueta do horizonte desenhada por código |
+| `ground/` | `grass`, `concrete` | `make_grass_texture.py` e `make_concrete_texture.py` | sem grama: grama em duas cores lisas, alternadas por trecho; sem concreto: chão liso na cor da era |
+| `atmosphere/` | `sky_panorama`, `smog_cloud` | copiados do kit por `render_models.py` (grupo `scenario`) | céu só em degradê, sem nuvens |
+
+Os nomes dos arquivos são os mesmos usados pelo código: `<modelo>` é a chave do avião (por exemplo,
+`dart`, `bis14`) e `<piloto>` é `none`, `riding`, `surfing`, `zen`, `waving`, `superman` ou `wheelchair`.
+
+Há duas formas de usar sprites:
+
+- **Embutidos no build**: coloque as pastas em `assets/<pasta>/` antes de gerar o executável.
+- **Sem recompilar**: coloque as pastas em `<pasta do exe>\assets\<pasta>\` (ou, no Python, em `assets/<pasta>/` ao lado do script).
+  Um PNG dessa pasta substitui o embutido.
+
+**Jogar sem sprites**: remova as pastas que quiser de `assets/` antes do build,
+ou apague essas pastas dentro de `_internal\assets\` no executável. O código desenha uma versão de reserva para cada sprite ausente.
+
+A pasta `powerup_models/` contém OBJ/MTL de referência (escudo, ímã e reparo). Ela não é usada na partida:
+o spec a copia para o pacote, mas o código não a carrega.
+
+## Regenerar os sprites a partir dos modelos
+
+Os sprites já vêm prontos em `assets/`. Os scripts de `tools/` servem só para regenerá-los quando os
+modelos 3D ou o estúdio mudarem. Eles não são necessários para jogar nem para gerar o `.exe`.
+
+Instale as dependências dos scripts (separadas das do jogo):
+
+```bash
+pip install -r tools/requirements-tools.txt
+python -m playwright install chromium    # só para extract_planes.py
+```
+
+`tools/requirements-tools.txt` traz numpy, Pillow e playwright. O `extract_planes.py` abre o HTML do
+estúdio num Chromium sem janela, pelo Playwright.
+
+### Cenário, lixo e árvores: `tools/render_models.py`
+
+```bash
+python tools/render_models.py --models PASTA_MODELOS_3D [--only GRUPOS] [--out PASTA_ASSETS]
+```
+
+- `--models`: pasta com os OBJ/MTL (`modelos_3d`). Obrigatório. Se houver `texturas/textura_rusty_scrap_dieselpunk.jpg`
+  dentro dela, os modelos de sucata usam essa textura.
+- `--only`: renderiza só os grupos indicados: `trees`, `props`, `trash` e `scenario`. Sem `--only`, gera tudo.
+- `--scenario`: pasta do kit `Dieselpunk_Scenario`. O padrão é `PASTA_MODELOS_3D/Dieselpunk_Scenario`.
+  O grupo `scenario` gera `scenario_sprites/` (28 peças), `skyline_sprites/` (8 silhuetas) e copia o
+  panorama do céu e a nuvem de fumaça para `atmosphere/`.
+- `--out`: pasta de saída. O padrão é a `assets/` do projeto.
+
+Os pilotos (boneco) não são gerados aqui: eles vêm do próprio estúdio de aviões, por `extract_planes.py`,
+já posicionados em cima de cada avião.
+
+### Grama: `tools/make_grass_texture.py`
+
+```bash
+python tools/make_grass_texture.py [--out assets/ground/grass.png] [--seed 7]
+```
+
+Gera a textura de grama do chão (256x128, contínua nas bordas, vista de cima). Mude `--seed` para
+outra variação. Usa numpy e Pillow.
+
+### Concreto: `tools/make_concrete_texture.py`
+
+```bash
+python tools/make_concrete_texture.py [--out assets/ground/concrete.png] [--seed 11]
+```
+
+Gera a textura de concreto sujo do chão (256x128, contínua nas bordas, vista de cima). Mude `--seed`
+para outra variação. Usa numpy e Pillow.
+
+### Aviões e pilotos: `tools/extract_planes.py`
+
+```bash
+python tools/extract_planes.py --html ESTUDIO.html --three three.min.js --jszip jszip.min.js
+```
+
+- `--html`: o arquivo HTML do "Estúdio 3D Aviões, 14-Bis & Piloto Customizável".
+- `--three`: three.js r128 (`three.min.js`). Pode vir do npm: `npm install three@0.128.0` e use
+  `node_modules/three/build/three.min.js`.
+- `--jszip`: JSZip 3.10.1 (`npm install jszip@3.10.1` e use `node_modules/jszip/dist/jszip.min.js`).
+- `--out`: pasta de saída. O padrão é a `assets/` do projeto.
+- `--game-size` (padrão 300) e `--menu-size` (padrão 260): tamanho em pixels dos sprites da partida e do hangar.
+
+- `--models` e `--pilots`: gera só os modelos e pilotos indicados (padrão: todos).
+
+Gera 77 sprites em `plane_sprites/` e 77 em `plane_menu/` (11 aviões × 7 pilotos), além de
+`plane_sprites/catalog.json` com os nomes dos modelos e dos pilotos. Para cada sprite, gera também a
+camada de pintura em `plane_paint/` e `plane_menu_paint/`: o mesmo avião, com a mesma câmera e o mesmo
+recorte, com o papel em branco e transparente onde aparecem o piloto e as peças que não são de papel. O
+jogo multiplica essa camada pela cor escolhida na Oficina de pintura. Leva cerca de 15 minutos.
+
+Os sprites atuais foram gerados com o estúdio do pacote "novos aviões refinados"
+(`Codigo_Fonte_Aplicacao_3D/estudio_avioes_14bis_e_piloto_3d.html` dentro do .zip).
+
+Depois de regenerar os sprites, recompile o jogo para embuti-los, ou copie os PNGs para a pasta do executável.
+
+## Alertas de antivírus e SmartScreen
+
+Executáveis gerados com PyInstaller costumam receber alertas de falso positivo do antivírus ou do
+Windows SmartScreen. Para reduzir o problema:
+
+- Prefira o modo **onedir** (padrão do `build_windows.bat`).
+- **Assine digitalmente** o executável com um certificado de assinatura de código.
+- Se o antivírus bloquear o arquivo, envie-o para análise ao fornecedor do antivírus.
+
+## Estrutura da pasta
+
+```
+eco_runner/
+├── eco_runner.py           código do jogo, gerador 3D e --self-test
+├── EcoRunner.spec          configuração do PyInstaller
+├── requirements.txt        dependências para executar (pygame)
+├── requirements-build.txt  dependências para gerar o executável (pygame + pyinstaller)
+├── build_windows.bat       build no Windows
+├── build_linux.sh          build no Linux
+├── tests/                  testes automatizados (pytest)
+├── tools/                  scripts para regenerar os sprites (não usados pelo jogo)
+│   ├── render_models.py    modelos OBJ -> sprites de árvores, props, sucata e cenário
+│   ├── extract_planes.py   estúdio de aviões (HTML + three.js) -> sprites de aviões e pilotos
+│   ├── make_grass_texture.py     textura de grama do chão
+│   ├── make_concrete_texture.py  textura de concreto sujo do chão
+│   └── requirements-tools.txt
+├── README.md
+├── assets/
+│   ├── plane_sprites/      aviões vistos de trás, com piloto (usados na partida)
+│   ├── plane_menu/         aviões em 3/4 (hangar)
+│   ├── plane_paint/        camadas de pintura dos aviões vistos de trás (Oficina de pintura)
+│   ├── plane_menu_paint/   camadas de pintura dos aviões em 3/4
+│   ├── trash_sprites/      10 modelos de sucata coletáveis
+│   ├── solarpunk_sprites/  10 árvores (eras III e IV)
+│   ├── dieselpunk_sprites/ 8 props (margens das eras I e II e obstáculos)
+│   ├── powerup_sprites/    escudo, ímã e reparo
+│   ├── scenario_sprites/   28 peças do kit Dieselpunk_Scenario (margens)
+│   ├── skyline_sprites/    silhuetas do horizonte (kit Dieselpunk_Scenario)
+│   ├── atmosphere/         panorama do céu poluído e nuvem de fumaça
+│   ├── ground/             texturas do chão: grama e concreto sujo
+│   └── powerup_models/     OBJ/MTL de referência (não usados na partida)
+└── save/                   recorde ao rodar pelo Python (criada automaticamente)
+```
+
+`build/`, `dist/` e `.venv/` são gerados pelo build e podem ser apagados.
+
+## Testes
+
+A suíte de testes está em `tests/` (pytest) e roda sem janela nem áudio.
+Não está incluída em `requirements.txt`, então instale o pytest antes:
+
+```bash
+pip install pytest
+python -m pytest tests
+```
+
+A suíte cobre hangar, voo nas quatro direções, limites, colisões de cada tipo de obstáculo, coleta
+em alturas diferentes, power-ups, recorde, seleção salva, fallbacks sem sprites, cenário em camadas
+(trechos da pista estáveis ao serem reciclados, neblina, concreto na fase inicial, grama a partir da
+frente de restauração, desenho em todas as eras, pastas no spec), Oficina de pintura (prévia, cancelar,
+confirmar, cor salva por avião, tinta só no papel), `--generate-3d` e `--self-test`
+(121 testes aprovados e 1 comportamento conhecido marcado como `xfail`).
+
+Para validar um executável empacotado, use também o `--self-test` descrito acima.
+
+### Checklist manual (no Windows, com o `.exe`)
+
+Os testes automáticos não substituem voar de verdade. Depois de cada build, confira:
+
+1. `EcoRunner.exe` abre por duplo clique, sem console, numa janela de 1100x650, e mostra o hangar.
+2. No hangar, ←/→ e A/D trocam o avião pelos 11 modelos; ↑/↓ e W/S trocam o piloto pelas 7 opções; ENTER ou ESPAÇO decola.
+   C abre a Oficina de pintura: ←/→ mudam a cor na prévia (o piloto não muda de cor), ENTER confirma, ESC cancela.
+   Decole e confira que o avião voa com a cor escolhida; feche e reabra o jogo e confira que cada avião manteve a sua cor.
+3. No voo, cada direção responde: ←/A esquerda, →/D direita, ↑/W/ESPAÇO sobem, ↓/S descem. O avião inclina ao se mover para os lados.
+4. Voando acima de cerca de ALT 97 (ou 113 para a caçamba e 117 para os tambores), tambores, caçamba, sucata e monte de lixo não colidem. Abaixo desses valores, o avião colide.
+5. A rede de tubos com válvula colide acima de cerca de ALT 88 e não colide abaixo dela.
+6. Chaminé e caldeira colidem em qualquer altura; desviando para o lado, não colidem.
+7. Pegue lixo nas três alturas (baixa, média e alta), voando na altura de cada um: cada coleta soma pontos e restauração.
+8. Bater tira uma vida (a tela pisca). Escudo, ímã (coleta lixo perto do avião) e reparo funcionam.
+9. Após 3 colisões aparece "FIM DE JOGO"; ENTER ou ESPAÇO voa de novo com o mesmo avião; C ou TAB volta ao hangar.
+10. Na pausa (P ou ESC), C ou TAB volta ao hangar.
+11. Feche e reabra o jogo: o recorde (`%APPDATA%\EcoRunner\eco_runner_recorde.json`) e a escolha de avião e piloto (`eco_runner_config.json`) continuam os mesmos.
+12. `EcoRunner.exe --generate-3d` mostra a mensagem com os caminhos do `.obj` e do `.mtl`.
+13. Copie a pasta `EcoRunner` para um caminho com espaços (ex.: `C:\Jogos Teste\Eco Runner\`) e para um PC sem Python, e repita o item 1.
+14. Numa cópia, apague `_internal\assets\ground`, `_internal\assets\dieselpunk_sprites`, `_internal\assets\plane_sprites`, `_internal\assets\trash_sprites`, `_internal\assets\scenario_sprites`, `_internal\assets\skyline_sprites` e `_internal\assets\atmosphere`, e confira que o jogo abre com os desenhos de reserva.
+15. Mova o avião de um lado para o outro: a pista desliza mais que as margens, a fileira de fundo menos que a da borda, e as silhuetas do horizonte e o céu quase não se movem.
+16. Durante o voo, as faixas da pista e os objetos das margens deslizam sem piscar nem trocar de lugar, e os objetos surgem aos poucos na neblina, sem aparecer de repente no fim da pista.
+17. Com a restauração subindo, o céu poluído e a fumaça somem aos poucos e as silhuetas do horizonte viram árvores.
+18. Ao passar de 50% de restauração, o chão fora da pista vira grama do avião até onde as árvores começam; a grama desliza junto com a pista e chega mais longe conforme a restauração sobe.
+19. Na fase inicial, o chão fora da pista é concreto sujo (placas, juntas, manchas de óleo e rachaduras) e desliza junto com a pista; depois de 50%, o concreto continua só além da grama.
