@@ -53,8 +53,16 @@ Cores disponíveis: Original do estúdio, Branco papel, Vermelho, Laranja, Amare
 Ciano, Azul, Anil, Roxo, Rosa, Dourado, Papelão kraft e Grafite. "Original do estúdio" mostra o avião
 com as cores padrão do estúdio, sem tinta.
 
-Cada avião lembra a sua cor. ENTER, ESPAÇO ou C confirmam e salvam a escolha em
-`eco_runner_config.json` (chave `cores`); ESC cancela e volta à cor anterior.
+A segunda linha da Oficina traz os **padrões de pintura** do estúdio 3D, com as cores dos presets
+dele: Camuflado selva, Camuflado deserto, Camuflado ártico, Chamas hot rod, Chamas de plasma, Galáxia
+estelar, Cyberpunk neon, Tigre selvagem, Fibra hexagonal, Prisma (dazzle), Xadrez de corrida, Listras
+de corrida, Raios solares, Pop art (retícula) e Brasil. O padrão é "vestido" no papel como no estúdio
+(segue as dobras e as faces do avião), e o piloto também não muda. ↑/↓ alternam entre a linha das
+cores e a dos padrões; "Liso" usa só a cor. Um padrão já tem as cores próprias, então escolher uma
+cor volta ao liso.
+
+Cada avião lembra a sua cor e o seu padrão. ENTER, ESPAÇO ou C confirmam e salvam a escolha em
+`eco_runner_config.json` (chaves `cores` e `padroes`); ESC cancela e volta à pintura anterior.
 
 ### Eras
 
@@ -107,6 +115,20 @@ Aparecem na pista e são pegos ao passar sobre eles:
 - **Ímã**: 7 s em que o lixo que passa perto do avião é coletado sozinho. Vale para lixo a menos de
   1,1 faixa de distância lateral e a menos de 110 unidades de altura.
 - **Reparo**: +1 vida, se o jogador tiver menos de 3. Com as 3 vidas, recupera +3% de restauração.
+
+### Manobras acrobáticas
+
+Ao pegar um power-up, o avião faz uma manobra tirada das animações 3D do pacote de aviões refinados:
+
+| Momento | Manobra | Animação de origem |
+|---|---|---|
+| Pegar o escudo | Looping vertical (sobe, passa de cabeça para baixo e volta) | 03 Looping Vertical Completo |
+| Pegar o ímã | Tonneau: giro de 360° em torno do próprio eixo | 05 Tonneau / Giro Aileron 360 |
+| Pegar o reparo | Manobra cobra: o nariz sobe quase na vertical e volta | 06 Manobra Cobra Rasante |
+| Decolar | Decolagem: o avião vem de perto e de baixo até a posição de voo | 07 Decolagem Histórica 14-Bis |
+
+As manobras são só visuais: duram de 1 a 1,5 s e não mudam a colisão nem os controles. O avião
+continua onde está para fins de jogo.
 
 ### Quais modelos aparecem onde
 
@@ -183,13 +205,16 @@ Os valores podem ser ajustados (ver "Ajustar câmera, paralaxe e velocidade").
 | Trocar de avião | ← / → ou A / D |
 | Trocar de piloto | ↑ / ↓ ou W / S |
 | Abrir a Oficina de pintura | C |
+| Trocar o controle: teclado → corpo → uma mão | V |
+| Recalibrar a câmera | R |
 | Decolar | ENTER ou ESPAÇO |
 
 ### Na Oficina de pintura
 
 | Ação | Teclas |
 |---|---|
-| Escolher a cor | ← / → ou A / D (↑ / ↓ e W / S também) |
+| Ir para a linha das cores ou dos padrões | ↑ / ↓ ou W / S |
+| Escolher a cor ou o padrão | ← / → ou A / D |
 | Confirmar e salvar | ENTER, ESPAÇO ou C |
 | Cancelar | ESC |
 
@@ -206,11 +231,86 @@ Os valores podem ser ajustados (ver "Ajustar câmera, paralaxe e velocidade").
 | Mostrar hitboxes (depuração) | F3 |
 
 Os comandos de voo são contínuos: o avião responde enquanto a tecla estiver pressionada.
+Com o controle por câmera ligado, o corpo e o teclado funcionam juntos (veja "Controle pela webcam").
 
 ### Fim de jogo e nova partida
 
 No game over, ENTER ou ESPAÇO voa de novo com o mesmo avião e piloto, e o recorde é mantido. C ou TAB
 volta ao hangar para trocar o avião ou o piloto.
+
+## Controle pela webcam
+
+O jogo pode ser comandado pela webcam, no hangar, na Oficina de pintura e no voo, em dois modos.
+A técnica vem do T-TEA 2.0: o MediaPipe Pose encontra ombros, quadris e pulsos na imagem.
+V no hangar troca o controle: **teclado → corpo → uma mão → teclado**.
+
+### Modo corpo
+
+Usa o centro do tronco e as duas mãos.
+
+| Onde | Gesto | Efeito |
+|---|---|---|
+| Hangar | Inclinar o corpo para os lados | Troca o avião (← / →) |
+| Hangar | Inclinar o corpo para cima / para baixo | Troca o piloto (↑ / ↓) |
+| Hangar | Levantar a mão direita | Decolar |
+| Hangar | Levantar a mão esquerda | Abre a Oficina de pintura |
+| Oficina | Inclinar para os lados / para cima e para baixo | Escolhe cor ou padrão, e troca a linha |
+| Oficina | Levantar a mão direita / esquerda | Salva / cancela |
+| Voo | Inclinar para a direita ou para a esquerda | Voa para o lado |
+| Voo | Levantar o corpo / agachar | Sobe / desce |
+| Fim de jogo | Levantar a mão direita / esquerda | Voar de novo / voltar ao hangar |
+
+Nos menus, cada inclinação conta como um passo: volte ao centro para poder mover de novo.
+Uma mão precisa ficar levantada por cerca de 0,3 s para contar.
+
+### Modo uma mão
+
+Tudo é feito com uma só mão (a direita, por padrão). O pulso funciona como um joystick em
+relação à posição de repouso calibrada.
+
+| Onde | Gesto | Efeito |
+|---|---|---|
+| Hangar | Mão para a esquerda / direita | Troca o avião |
+| Hangar | Mão para cima | Próximo piloto |
+| Hangar | Mão para baixo | Abre a Oficina de pintura |
+| Hangar | Mão levantada acima do ombro | Decolar |
+| Oficina | Mão para a esquerda / direita | Escolhe a cor ou o padrão |
+| Oficina | Mão para cima | Alterna entre a linha de cores e a de padrões |
+| Oficina | Mão levantada / mão para baixo | Salva / cancela |
+| Voo | Mão para os lados, para cima, para baixo | O avião segue a mão |
+| Fim de jogo | Mão levantada / mão para baixo | Voar de novo / voltar ao hangar |
+
+Nos menus, a mão precisa ficar um instante (cerca de 0,3 s) na posição para o gesto contar, então
+movimentos de passagem não disparam nada. Depois de cada gesto, volte a mão ao centro.
+"Mão para baixo" pede um movimento maior e cerca de 0,7 s, para não disparar quando você relaxa o braço.
+
+Para usar a mão esquerda, troque `HAND = "right"` por `HAND = "left"` em `webcam_control.py`.
+
+### Como ativar
+
+1. Instale as bibliotecas opcionais (Python 3.10 a 3.13): `pip install -r requirements-webcam.txt`.
+   No `.exe` pronto elas já vêm incluídas, se o build tiver sido feito com o `requirements-webcam.txt` instalado.
+2. No hangar, aperte V até aparecer o modo desejado (corpo ou uma mão). A linha de status mostra o modo e se a câmera está ligada.
+3. Fique de frente para a câmera e fique parado (no modo uma mão, mantenha a mão parada na posição de repouso)
+   por cerca de 2 segundos enquanto o jogo calibra (porcentagem no status). A posição de repouso vale para o hangar e para o voo.
+4. Se mudar de lugar, aperte **R** no hangar para recalibrar.
+
+Uma miniatura da câmera aparece no hangar (canto superior direito) e no voo (canto inferior esquerdo).
+
+Se a câmera ou as bibliotecas não estiverem disponíveis, o hangar mostra o motivo e o jogo segue com o teclado.
+O teclado funciona em todos os modos. A escolha fica salva em `eco_runner_config.json`
+(chave `controle`, valores `teclado`, `camera` ou `mao`), e a câmera já inicia ao abrir o jogo se estiver escolhida.
+
+### Sensibilidade
+
+Os limites de movimento estão em `webcam_control.py`: `PoseMapper` (modo corpo) e `HandMapper` (modo uma mão).
+`RANGE_X` e `RANGE_Y` dizem quanto o tronco ou a mão precisa se deslocar para o avião chegar ao máximo, e
+`DEAD_X` / `DEAD_Y` são a zona morta contra tremor. Os gestos de menu estão em `MenuNavigator` (corpo) e
+`HandNavigator` (uma mão: `ON`, `OFF` e `DWELL`, o tempo de permanência em leituras da câmera).
+Valores menores deixam o controle mais sensível. Se algo reagir sem você querer, aumente a zona morta ou o `DWELL`.
+
+O modelo de pose fica em `assets/pose_model/pose_landmarker_lite.task`. O arquivo é do MediaPipe (Google)
+e foi copiado do T-TEA 2.0.
 
 ## Ajustar câmera, paralaxe e velocidade
 
@@ -293,8 +393,8 @@ O jogo pode gerar o modelo Art Nouveau da árvore fotovoltaica em formato OBJ/MT
 Arquivos gerados nessa pasta:
 
 - `eco_runner_recorde.json`: o recorde.
-- `eco_runner_config.json`: o avião e o piloto escolhidos no hangar (chaves `aviao` e `piloto`) e a cor de
-  cada avião (chave `cores`).
+- `eco_runner_config.json`: o avião e o piloto escolhidos no hangar (chaves `aviao` e `piloto`), a cor
+  e o padrão de pintura de cada avião (chaves `cores` e `padroes`).
 - `eco_runner_erro.log`: detalhes técnicos quando o jogo fecha por erro inesperado.
   A mensagem de erro indica esse arquivo.
 - `self_test.json`: relatório do `--self-test`.
@@ -309,7 +409,8 @@ A variável de ambiente `ECO_RUNNER_DATA_DIR` substitui essa pasta.
 EcoRunner.exe --self-test 60
 ```
 
-Passa pelo hangar e pela Oficina de pintura (sem alterar a cor salva), inicia uma partida e roda N quadros (padrão: 180) com comandos simulados nas
+Passa pelo hangar e pela Oficina de pintura (testa uma cor e um padrão, sem alterar a pintura salva), inicia
+uma partida, desenha cada manobra em três fases e roda N quadros (padrão: 180) com comandos simulados nas
 quatro direções. Grava `self_test.json` com versões, caminhos, sprites carregados e status. Serve para
 verificar se um executável empacotado abre e roda. Não testa a jogabilidade.
 
@@ -353,6 +454,9 @@ impede o jogo de abrir.
 | `plane_sprites/` | `<modelo>__<piloto>.png`: avião visto de trás, usado na partida (além de `catalog.json`) | `extract_planes.py` | usa o mesmo avião sem piloto (`<modelo>__none`); se também faltar, desenha o avião por código |
 | `plane_menu/` | `<modelo>__<piloto>.png`: avião em 3/4, usado no hangar | `extract_planes.py` | desenha o avião por código |
 | `plane_paint/` e `plane_menu_paint/` | `<modelo>__<piloto>.png`: camada de pintura (o papel visível em branco), do mesmo tamanho do sprite correspondente | `extract_planes.py` | a cor escolhida não aparece no sprite (o avião fica com as cores originais) |
+| `plane_uv/` e `plane_menu_uv/` | `<modelo>__<piloto>.png`: mapa UV do papel (R = coluna, G = linha da textura), do mesmo tamanho do sprite correspondente | `extract_planes.py` | o padrão não aparece; o avião usa a cor escolhida (ou as cores originais) |
+| `plane_patterns/` | `<padrão>.png`: textura 256×256 de cada padrão de pintura | `extract_planes.py` | o padrão não aparece (miniatura com "?" na Oficina) |
+| `maneuvers/` | `maneuvers.json`: curvas das manobras (giro, nariz, deslocamentos) | `extract_maneuvers.py` | usa curvas simples embutidas no código |
 | `trash_sprites/` | `rusty_can`, `chemical_battery`, `radio_transceiver`, `junkyard_mask`, `shattered_spotlight`, `turbine_debris`, `broken_pipe`, `scrap_heap`, `piston_pump`, `debris_plate` | `render_models.py` (grupo `trash`) | lixo desenhado como círculo |
 | `solarpunk_sprites/` | `01_art_nouveau_solar_tree` até `10_arvore_cristalina` | `render_models.py` (grupo `trees`) | árvore desenhada por código |
 | `dieselpunk_sprites/` | `fabrica`, `chamine`, `caldeira`, `tubos_valvula`, `tambores`, `lixo`, `sucata`, `cacamba` | `render_models.py` (grupo `props`) | props como retângulo escuro; obstáculos como blocos |
@@ -441,17 +545,39 @@ python tools/extract_planes.py --html ESTUDIO.html --three three.min.js --jszip 
 - `--game-size` (padrão 300) e `--menu-size` (padrão 260): tamanho em pixels dos sprites da partida e do hangar.
 
 - `--models` e `--pilots`: gera só os modelos e pilotos indicados (padrão: todos).
+- `--passes`: o que gravar entre `sprites`, `paint` e `uv` (padrão: tudo).
 
 Gera 77 sprites em `plane_sprites/` e 77 em `plane_menu/` (11 aviões × 7 pilotos), além de
 `plane_sprites/catalog.json` com os nomes dos modelos e dos pilotos. Para cada sprite, gera também a
 camada de pintura em `plane_paint/` e `plane_menu_paint/`: o mesmo avião, com a mesma câmera e o mesmo
 recorte, com o papel em branco e transparente onde aparecem o piloto e as peças que não são de papel. O
-jogo multiplica essa camada pela cor escolhida na Oficina de pintura. Leva cerca de 15 minutos.
+jogo multiplica essa camada pela cor escolhida na Oficina de pintura.
+
+Gera ainda o **mapa UV** de cada sprite em `plane_uv/` e `plane_menu_uv/`: cada pixel do papel guarda a
+coordenada da textura do estúdio naquele ponto (R = coluna, G = linha). As 15 texturas dos padrões vão
+para `plane_patterns/`, desenhadas pela própria função do estúdio (`drawSchemeBackground`) com as
+cores dos presets dele. O jogo consulta a textura pelo mapa UV pixel a pixel, então cada padrão segue
+as dobras do avião sem precisar de uma imagem por padrão e por combinação. Leva cerca de 25 minutos.
 
 Os sprites atuais foram gerados com o estúdio do pacote "novos aviões refinados"
 (`Codigo_Fonte_Aplicacao_3D/estudio_avioes_14bis_e_piloto_3d.html` dentro do .zip).
 
 Depois de regenerar os sprites, recompile o jogo para embuti-los, ou copie os PNGs para a pasta do executável.
+
+### Manobras: `tools/extract_maneuvers.py`
+
+```bash
+python tools/extract_maneuvers.py --gltf-dir CAMINHO/01_Animacoes_3D_Prontas_GLTF_8_Manobras
+```
+
+Lê as animações glTF do pacote (posição e rotação do avião quadro a quadro) e grava
+`assets/maneuvers/maneuvers.json`. Para cada manobra usada no jogo, recorta um ciclo (o giro de 360° do
+tonneau, a volta completa do looping, a animação inteira da cobra e o final da decolagem) e o converte
+para o referencial do avião: `roll` (giro), `pitch` (nariz), `dx`, `dy` e `dz` (deslocamentos
+normalizados). O ciclo é ajustado para começar e terminar na posição normal. O jogo aplica essas
+curvas ao sprite visto de trás: roll vira rotação, pitch vira achatamento (e inversão no topo do
+looping), dx/dy viram deslocamento na tela e dz vira escala. Duração e amplitude de cada manobra no
+jogo ficam em `MANEUVER_STYLES` (`eco_runner.py`). Não precisa de dependências além do Python.
 
 ## Alertas de antivírus e SmartScreen
 
@@ -469,13 +595,16 @@ eco_runner/
 ├── eco_runner.py           código do jogo, gerador 3D e --self-test
 ├── EcoRunner.spec          configuração do PyInstaller
 ├── requirements.txt        dependências para executar (pygame)
+├── requirements-webcam.txt dependências opcionais do controle pela webcam (mediapipe, opencv)
+├── webcam_control.py       controle pela webcam: leitura da câmera, calibração e eixos do voo
 ├── requirements-build.txt  dependências para gerar o executável (pygame + pyinstaller)
 ├── build_windows.bat       build no Windows
 ├── build_linux.sh          build no Linux
 ├── tests/                  testes automatizados (pytest)
 ├── tools/                  scripts para regenerar os sprites (não usados pelo jogo)
 │   ├── render_models.py    modelos OBJ -> sprites de árvores, props, sucata e cenário
-│   ├── extract_planes.py   estúdio de aviões (HTML + three.js) -> sprites de aviões e pilotos
+│   ├── extract_planes.py   estúdio de aviões (HTML + three.js) -> sprites, pintura, mapas UV e padrões
+│   ├── extract_maneuvers.py  animações glTF do pacote -> curvas das manobras
 │   ├── make_grass_texture.py     textura de grama do chão
 │   ├── make_concrete_texture.py  textura de concreto sujo do chão
 │   └── requirements-tools.txt
@@ -485,6 +614,10 @@ eco_runner/
 │   ├── plane_menu/         aviões em 3/4 (hangar)
 │   ├── plane_paint/        camadas de pintura dos aviões vistos de trás (Oficina de pintura)
 │   ├── plane_menu_paint/   camadas de pintura dos aviões em 3/4
+│   ├── plane_uv/           mapas UV do papel (vista de trás) para os padrões de pintura
+│   ├── plane_menu_uv/      mapas UV do papel (vista 3/4)
+│   ├── plane_patterns/     15 texturas de padrões de pintura do estúdio
+│   ├── maneuvers/          curvas das manobras (maneuvers.json)
 │   ├── trash_sprites/      10 modelos de sucata coletáveis
 │   ├── solarpunk_sprites/  10 árvores (eras III e IV)
 │   ├── dieselpunk_sprites/ 8 props (margens das eras I e II e obstáculos)
@@ -513,8 +646,10 @@ A suíte cobre hangar, voo nas quatro direções, limites, colisões de cada tip
 em alturas diferentes, power-ups, recorde, seleção salva, fallbacks sem sprites, cenário em camadas
 (trechos da pista estáveis ao serem reciclados, neblina, concreto na fase inicial, grama a partir da
 frente de restauração, desenho em todas as eras, pastas no spec), Oficina de pintura (prévia, cancelar,
-confirmar, cor salva por avião, tinta só no papel), `--generate-3d` e `--self-test`
-(121 testes aprovados e 1 comportamento conhecido marcado como `xfail`).
+confirmar, cor e padrão salvos por avião, tinta e padrão só no papel, padrão sem mapa UV), manobras
+(curvas do pacote, reserva sem o JSON, disparo por power-up e na decolagem, colisão inalterada,
+looping invertido no topo), `--generate-3d` e `--self-test`
+(133 testes aprovados e 1 comportamento conhecido marcado como `xfail`).
 
 Para validar um executável empacotado, use também o `--self-test` descrito acima.
 
@@ -524,14 +659,16 @@ Os testes automáticos não substituem voar de verdade. Depois de cada build, co
 
 1. `EcoRunner.exe` abre por duplo clique, sem console, numa janela de 1100x650, e mostra o hangar.
 2. No hangar, ←/→ e A/D trocam o avião pelos 11 modelos; ↑/↓ e W/S trocam o piloto pelas 7 opções; ENTER ou ESPAÇO decola.
-   C abre a Oficina de pintura: ←/→ mudam a cor na prévia (o piloto não muda de cor), ENTER confirma, ESC cancela.
-   Decole e confira que o avião voa com a cor escolhida; feche e reabra o jogo e confira que cada avião manteve a sua cor.
+   C abre a Oficina de pintura: ←/→ mudam a cor na prévia (o piloto não muda de cor), ↓ vai para os padrões
+   (camuflado, chamas, galáxia...) e ↑ volta às cores; ENTER confirma, ESC cancela.
+   Decole e confira que o avião voa com a pintura escolhida; feche e reabra o jogo e confira que cada avião manteve a sua.
 3. No voo, cada direção responde: ←/A esquerda, →/D direita, ↑/W/ESPAÇO sobem, ↓/S descem. O avião inclina ao se mover para os lados.
 4. Voando acima de cerca de ALT 97 (ou 113 para a caçamba e 117 para os tambores), tambores, caçamba, sucata e monte de lixo não colidem. Abaixo desses valores, o avião colide.
 5. A rede de tubos com válvula colide acima de cerca de ALT 88 e não colide abaixo dela.
 6. Chaminé e caldeira colidem em qualquer altura; desviando para o lado, não colidem.
 7. Pegue lixo nas três alturas (baixa, média e alta), voando na altura de cada um: cada coleta soma pontos e restauração.
 8. Bater tira uma vida (a tela pisca). Escudo, ímã (coleta lixo perto do avião) e reparo funcionam.
+   Ao pegar cada um, o avião faz a manobra: looping (escudo), tonneau (ímã) e cobra (reparo); ao decolar, a decolagem.
 9. Após 3 colisões aparece "FIM DE JOGO"; ENTER ou ESPAÇO voa de novo com o mesmo avião; C ou TAB volta ao hangar.
 10. Na pausa (P ou ESC), C ou TAB volta ao hangar.
 11. Feche e reabra o jogo: o recorde (`%APPDATA%\EcoRunner\eco_runner_recorde.json`) e a escolha de avião e piloto (`eco_runner_config.json`) continuam os mesmos.
@@ -543,3 +680,10 @@ Os testes automáticos não substituem voar de verdade. Depois de cada build, co
 17. Com a restauração subindo, o céu poluído e a fumaça somem aos poucos e as silhuetas do horizonte viram árvores.
 18. Ao passar de 50% de restauração, o chão fora da pista vira grama do avião até onde as árvores começam; a grama desliza junto com a pista e chega mais longe conforme a restauração sobe.
 19. Na fase inicial, o chão fora da pista é concreto sujo (placas, juntas, manchas de óleo e rachaduras) e desliza junto com a pista; depois de 50%, o concreto continua só além da grama.
+20. Numa cópia, apague `_internal\assets\plane_uv` e `_internal\assets\maneuvers`: a Oficina continua abrindo (o padrão não aparece e o avião fica com a cor) e as manobras usam as curvas de reserva.
+21. Com a câmera (V no hangar), a barra de calibração aparece no status; depois de calibrar, "pessoa detectada" (modo corpo) ou "mão detectada" (modo uma mão) aparece.
+22. Modo corpo: inclinar o corpo de leve troca o avião e o piloto no hangar, um passo por inclinação; levantar a mão direita decola; a mão esquerda abre a Oficina.
+23. Modo corpo, na Oficina: inclinar escolhe cor e padrão, a mão direita salva e a esquerda cancela.
+24. Modo uma mão: mão para os lados troca o avião, para cima troca o piloto, para baixo abre a Oficina, levantada decola. Na Oficina, para cima alterna cores e padrões.
+25. Modo uma mão, no voo: o avião segue a mão; no fim de jogo, mão levantada voa de novo e mão para baixo volta ao hangar.
+26. Sem a câmera ou sem as bibliotecas, o hangar mostra o motivo e o teclado continua funcionando.

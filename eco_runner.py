@@ -67,6 +67,8 @@ os.environ.setdefault("PYGAME_HIDE_SUPPORT_PROMPT", "1")
 
 import pygame  # noqa: E402
 
+from webcam_control import PoseCameraSource, WebcamControl  # noqa: E402
+
 APP_NAME = "EcoRunner"
 SAVE_FILENAME = "eco_runner_recorde.json"
 TREE_OBJ_FILENAME = "solarpunk_tree_alphonse.obj"
@@ -110,6 +112,15 @@ def asset_dir_candidates(name: str) -> List[Path]:
 def find_asset_dir(name: str) -> Optional[Path]:
     for path in asset_dir_candidates(name):
         if path.is_dir():
+            return path
+    return None
+
+
+def find_pose_model() -> Optional[Path]:
+    """Modelo do MediaPipe Pose (pasta assets/pose_model), ou None se faltar."""
+    for folder in asset_dir_candidates("pose_model"):
+        path = folder / POSE_MODEL_NAME
+        if path.is_file():
             return path
     return None
 
@@ -415,6 +426,12 @@ PLANE_WIDTH = 130.0            # envergadura visual/colisão (mundo)
 PLANE_HEIGHT = 34.0
 HIGH_SCORE_SAVE_INTERVAL = 5.0
 CONFIG_FILENAME = "eco_runner_config.json"
+CONTROL_MODES = ("teclado", "camera", "mao")   # teclado, corpo pela webcam ou uma mão pela webcam
+CONTROL_LABELS = {"teclado": "teclado", "camera": "corpo", "mao": "uma mão"}
+CHEAT_CODE = (pygame.K_UP, pygame.K_UP, pygame.K_DOWN, pygame.K_DOWN, pygame.K_LEFT,
+              pygame.K_RIGHT, pygame.K_LEFT, pygame.K_RIGHT, pygame.K_b, pygame.K_a)
+CHEAT_FLASH_TIME = 0.35
+POSE_MODEL_NAME = "pose_landmarker_lite.task"
 NEAR_CLIP_Z = 60.0             # sprites mais perto que isso não são desenhados
 # Teste de paralaxe: fração do deslocamento lateral do avião que a câmera acompanha.
 # 0.0 = câmera fixa (comportamento anterior); 0.35 = o cenário desliza em relação ao avião.
@@ -675,6 +692,86 @@ PLANE_COLORS: List[Tuple[str, str, Optional[Tuple[int, int, int]]]] = [
 ]
 PLANE_COLOR_KEYS = [key for key, _, _ in PLANE_COLORS]
 
+# Padrões de pintura do estúdio 3D (segunda linha da Oficina). Cada padrão é uma
+# textura 256×256 em assets/plane_patterns, desenhada pelo próprio estúdio com as
+# cores dos presets dele; o jogo a "veste" no papel do avião usando o mapa UV de
+# cada combinação (assets/plane_uv e plane_menu_uv). "liso" usa só a cor escolhida.
+PLANE_PATTERNS: List[Tuple[str, str]] = [
+    ("liso", "Liso (só a cor)"), ("camuflado", "Camuflado selva"), ("deserto", "Camuflado deserto"),
+    ("artico", "Camuflado ártico"), ("chamas", "Chamas hot rod"), ("plasma", "Chamas de plasma"),
+    ("galaxia", "Galáxia estelar"), ("cyberpunk", "Cyberpunk neon"), ("tigre", "Tigre selvagem"),
+    ("hexagonal", "Fibra hexagonal"), ("prisma", "Prisma (dazzle)"), ("xadrez", "Xadrez de corrida"),
+    ("listras", "Listras de corrida"), ("raios", "Raios solares"), ("pop_art", "Pop art (retícula)"),
+    ("brasil", "Brasil"),
+]
+PLANE_PATTERN_KEYS = [key for key, _ in PLANE_PATTERNS]
+PATTERN_TEXTURE_SIZE = 256
+PATTERN_CACHE_LIMIT = 4        # paletas de padrão prontas na memória (~2,7 MB cada)
+
+
+# Manobras: curvas extraídas das animações glTF do pacote 3D (tools/extract_maneuvers.py
+# grava assets/maneuvers/maneuvers.json). São só visuais: a colisão usa a posição real.
+@dataclass(frozen=True)
+class ManeuverStyle:
+    label: str
+    duration: float    # segundos no jogo
+    sway: float        # deslocamento lateral máximo (em larguras do avião)
+    lift: float        # deslocamento vertical máximo (em larguras do avião)
+    depth: float       # quanto o avião encolhe ao se afastar (dz = 1)
+
+
+MANEUVER_STYLES = {
+    "tonneau": ManeuverStyle("Tonneau (giro de 360°)", 0.95, 0.35, 0.3, 0.2),
+    "looping": ManeuverStyle("Looping vertical", 1.5, 0.3, 0.55, 0.3),
+    "cobra": ManeuverStyle("Manobra cobra", 1.2, 0.3, 0.4, 0.25),
+    "decolagem": ManeuverStyle("Decolagem", 1.4, 0.4, 0.5, 0.3),
+}
+POWERUP_MANEUVERS = {"shield": "looping", "magnet": "tonneau", "repair": "cobra"}
+START_MANEUVER = "decolagem"
+MANEUVER_MIN_THICKNESS = 0.28  # de perfil (nariz para cima) o sprite não some
+MANEUVER_TOP_MARGIN = 70       # px: o centro do avião não sobe além disto durante a manobra
+
+
+def builtin_maneuvers() -> dict:
+    """Curvas de reserva (mesmo formato do JSON), usadas se o arquivo faltar."""
+    curves = {}
+    n = 33
+    for name in MANEUVER_STYLES:
+        rows = []
+        for i in range(n):
+            t = i / (n - 1)
+            s = math.sin(math.pi * t)
+            if name == "tonneau":
+                rows.append((t, -360.0 * t, 0.0, 0.2 * math.sin(2 * math.pi * t), s, 0.4 * s))
+            elif name == "looping":
+                rows.append((t, 0.0, 360.0 * t, 0.0, (1 - math.cos(2 * math.pi * t)) / 2,
+                             0.5 * math.sin(2 * math.pi * t)))
+            elif name == "cobra":
+                rows.append((t, 0.0, 78.0 * s * s, 0.0, 0.25 * s, s))
+            else:
+                rows.append((t, 0.0, 20.0 * (1 - t), 0.0, -0.25 * (1 - t), -(1 - t)))
+        curves[name] = rows
+    return curves
+
+
+def load_maneuvers() -> dict:
+    """Lê assets/maneuvers/maneuvers.json: por manobra, linhas (t, roll, pitch, dx, dy, dz)."""
+    curves = builtin_maneuvers()
+    for folder in asset_dir_candidates("maneuvers"):
+        path = folder / "maneuvers.json"
+        if not path.is_file():
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            for name in MANEUVER_STYLES:
+                rows = data.get(name, {}).get("samples")
+                if rows and len(rows) >= 2 and all(len(r) == 6 for r in rows):
+                    curves[name] = [tuple(float(v) for v in r) for r in rows]
+            break
+        except (OSError, ValueError, TypeError, AttributeError):
+            continue
+    return curves
+
 
 @dataclass
 class Entity:
@@ -745,7 +842,14 @@ class Game:
         self.plane_menu_sprites = self.load_sprite_set("plane_menu", combos)
         self.plane_paint = self.load_sprite_set("plane_paint", combos)
         self.plane_menu_paint = self.load_sprite_set("plane_menu_paint", combos)
+        self.plane_uv = self.load_sprite_set("plane_uv", combos)
+        self.plane_menu_uv = self.load_sprite_set("plane_menu_uv", combos)
+        self.pattern_textures = self.load_pattern_textures()
+        self.pattern_palettes: dict = {}
+        self.uv_indices: dict = {}
+        self.pattern_thumbs: dict = {}
         self.painted_cache: dict = {}
+        self.maneuver_curves = load_maneuvers()
         self.scenario_sprites = self.load_sprite_set("scenario_sprites", SCENARIO_SPRITES)
         self.skyline_sprites = self.load_sprite_set("skyline_sprites", SKYLINE_SPRITES)
         atmosphere = self.load_sprite_set("atmosphere", ["sky_panorama", "smog_cloud"])
@@ -774,8 +878,23 @@ class Game:
         self.high_score = self.load_high_score()
         self.plane_index, self.pilot_index = self.load_selection()
         self.plane_colors = self.load_plane_colors()
+        self.plane_patterns = self.load_plane_patterns()
+        self.control_mode = self.load_control_mode()
+        self.webcam: Optional[WebcamControl] = None     # criado ao usar a câmera
+        self.analog = (0.0, 0.0)                        # eixos da câmera: (direita, subir), -1..1
+        self.webcam_surface: Optional[pygame.Surface] = None
+        self.webcam_surface_bytes: Optional[bytes] = None
+        self.cheat_keys: List[int] = []                 # últimas teclas do hangar
+        self.cheat_armed = False                        # vale para a próxima partida
+        self.cheat_invincible = False                   # ativo na partida atual
+        self.cheat_flash = 0.0
+        if self.uses_camera:
+            self.ensure_webcam()                        # calibra enquanto você está no hangar
         self.paint_index = 0
+        self.pattern_index = 0
+        self.paint_row = 0           # 0 = cor, 1 = padrão (linha ativa na Oficina)
         self.paint_before = "original"
+        self.pattern_before = "liso"
         self.state = "menu"          # menu (hangar) | playing
         self.reset()
 
@@ -800,6 +919,17 @@ class Game:
                 except (OSError, pygame.error):
                     continue
         return sprites
+
+    def load_pattern_textures(self) -> dict:
+        """Texturas dos padrões de pintura, sempre em 256×256 (o mapa UV usa 8 bits)."""
+        textures = {}
+        loaded = self.load_sprite_set("plane_patterns", PLANE_PATTERN_KEYS[1:])
+        size = (PATTERN_TEXTURE_SIZE, PATTERN_TEXTURE_SIZE)
+        for key, surface in loaded.items():
+            if surface.get_size() != size:
+                surface = pygame.transform.smoothscale(surface, size)
+            textures[key] = surface
+        return textures
 
     def load_dieselpunk_sprites(self) -> dict:
         return self.load_sprite_set("dieselpunk_sprites", [name for name, _ in DIESELPUNK_PROP_SPECS])
@@ -1277,9 +1407,39 @@ class Game:
         return PLANE_COLORS[PLANE_COLOR_KEYS.index(self.plane_color_key)][2]
 
     @property
+    def plane_pattern_key(self) -> str:
+        key = self.plane_patterns.get(self.plane_key, "liso")
+        return key if key in PLANE_PATTERN_KEYS else "liso"
+
+    @property
     def plane_look(self) -> str:
-        """Identifica o visual atual (modelo, piloto e cor) para os caches de desenho."""
-        return f"{self.plane_combo}@{self.plane_color_key}"
+        """Identifica o visual atual (modelo, piloto, cor e padrão) para os caches de desenho."""
+        return f"{self.plane_combo}@{self.plane_color_key}+{self.plane_pattern_key}"
+
+    def paint_label(self) -> str:
+        """Descrição curta da pintura atual (hangar)."""
+        if self.plane_pattern_key != "liso":
+            return f"padrão: {PLANE_PATTERNS[PLANE_PATTERN_KEYS.index(self.plane_pattern_key)][1]}"
+        return f"cor: {PLANE_COLORS[PLANE_COLOR_KEYS.index(self.plane_color_key)][1]}"
+
+    @staticmethod
+    def load_control_mode() -> str:
+        try:
+            data = json.loads((user_data_dir() / CONFIG_FILENAME).read_text(encoding="utf-8"))
+            mode = data.get("controle", "teclado")
+        except (OSError, ValueError, TypeError, AttributeError):
+            return "teclado"
+        return mode if mode in CONTROL_MODES else "teclado"
+
+    @staticmethod
+    def load_plane_patterns() -> dict:
+        try:
+            data = json.loads((user_data_dir() / CONFIG_FILENAME).read_text(encoding="utf-8"))
+            patterns = data.get("padroes", {})
+            models = {k for k, _ in PLANE_MODELS}
+            return {m: c for m, c in patterns.items() if m in models and c in PLANE_PATTERN_KEYS}
+        except (OSError, ValueError, TypeError, AttributeError):
+            return {}
 
     @staticmethod
     def load_plane_colors() -> dict:
@@ -1305,7 +1465,8 @@ class Game:
         path = user_data_dir() / CONFIG_FILENAME
         try:
             path.write_text(
-                json.dumps({"aviao": self.plane_key, "piloto": self.pilot_key, "cores": self.plane_colors},
+                json.dumps({"aviao": self.plane_key, "piloto": self.pilot_key, "cores": self.plane_colors,
+                            "padroes": self.plane_patterns, "controle": self.control_mode},
                            ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
@@ -1315,7 +1476,41 @@ class Game:
     def start_run(self) -> None:
         self.save_selection()
         self.reset()
+        self.cheat_invincible = self.cheat_armed       # precisa ser digitado de novo a cada partida
+        self.cheat_armed = False
+        self.cheat_keys.clear()
         self.state = "playing"
+        self.plane_surface()              # já monta a pintura do voo (evita um tranco no 1º quadro)
+        self.start_maneuver(START_MANEUVER)
+        self.ensure_webcam()
+
+    # --------------------------------------------------------------- manobras
+    def start_maneuver(self, name: Optional[str]) -> None:
+        """Começa uma manobra (substitui a atual). Só muda o desenho do avião."""
+        if name in MANEUVER_STYLES:
+            self.maneuver = name
+            self.maneuver_time = 0.0
+
+    def update_maneuver(self, dt: float) -> None:
+        if self.maneuver is None:
+            return
+        self.maneuver_time += dt
+        if self.maneuver_time >= MANEUVER_STYLES[self.maneuver].duration:
+            self.maneuver = None
+            self.maneuver_time = 0.0
+
+    def maneuver_pose(self) -> Optional[Tuple[float, float, float, float, float]]:
+        """(roll, pitch, dx, dy, dz) da manobra atual, interpolados no tempo; None sem manobra."""
+        if self.maneuver is None:
+            return None
+        rows = self.maneuver_curves[self.maneuver]
+        u = clamp(self.maneuver_time / MANEUVER_STYLES[self.maneuver].duration, 0.0, 1.0)
+        for j in range(1, len(rows)):
+            if u <= rows[j][0] or j == len(rows) - 1:
+                a, b = rows[j - 1], rows[j]
+                f = clamp((u - a[0]) / max(1e-6, b[0] - a[0]), 0.0, 1.0)
+                return tuple(a[k] + (b[k] - a[k]) * f for k in range(1, 6))  # type: ignore[return-value]
+        return None
 
     # ------------------------------------------------------------------ estado
     def reset(self) -> None:
@@ -1339,6 +1534,8 @@ class Game:
         self.pressed_keys: set = set()
         self.show_hitboxes = False
         self.lives = 3
+        self.maneuver: Optional[str] = None
+        self.maneuver_time = 0.0
         self.shield_timer = 0.0
         self.magnet_timer = 0.0
         self.invulnerable_timer = 0.0
@@ -1435,9 +1632,10 @@ class Game:
                 self.increase_restoration(3.0)
                 label = "+3% ECO"
         self.floating.append(FloatingText(label, entity.x, entity.y + 48.0))
+        self.start_maneuver(POWERUP_MANEUVERS.get(entity.kind))
 
     def take_hit(self) -> None:
-        if self.shield_timer > 0 or self.invulnerable_timer > 0:
+        if self.cheat_invincible or self.shield_timer > 0 or self.invulnerable_timer > 0:
             return
         self.lives = max(0, self.lives - 1)
         self.invulnerable_timer = 1.25
@@ -1523,6 +1721,150 @@ class Game:
         pygame.K_DOWN: "down", pygame.K_s: "down",
     }
 
+    # ------------------------------------------------------ controle pela câmera
+    def toggle_control_mode(self) -> None:
+        """V no hangar: teclado → corpo → uma mão → teclado."""
+        index = CONTROL_MODES.index(self.control_mode)
+        self.control_mode = CONTROL_MODES[(index + 1) % len(CONTROL_MODES)]
+        self.stop_webcam()                              # cada modo calibra do zero
+        self.ensure_webcam()
+
+    @property
+    def uses_camera(self) -> bool:
+        return self.control_mode in ("camera", "mao")
+
+    def ensure_webcam(self) -> None:
+        """Liga a webcam se um controle por câmera estiver escolhido (uma vez só)."""
+        if not self.uses_camera or self.webcam is not None:
+            return
+        mode = "mao" if self.control_mode == "mao" else "corpo"
+        self.webcam = WebcamControl(PoseCameraSource(find_pose_model()), mode=mode)
+        self.webcam.start()
+
+    def stop_webcam(self) -> None:
+        if self.webcam is not None:
+            self.webcam.stop()
+            self.webcam = None
+        self.analog = (0.0, 0.0)
+        self.webcam_surface = None
+        self.webcam_surface_bytes = None
+
+    def poll_webcam(self) -> None:
+        """Lê a câmera (se estiver ligada) e atualiza os eixos e a miniatura."""
+        if self.webcam is None:
+            self.analog = (0.0, 0.0)
+            return
+        self.webcam.poll()
+        self.analog = self.webcam.axes()
+        preview = self.webcam.preview
+        if preview is not None and preview is not self.webcam_surface_bytes:
+            self.webcam_surface_bytes = preview
+            self.webcam_surface = pygame.image.frombytes(preview, (160, 120), "RGB")
+
+    def webcam_hangar_status(self) -> str:
+        if not self.uses_camera:
+            return "Controle: teclado   (V: trocar o controle)"
+        label = CONTROL_LABELS[self.control_mode]
+        if self.webcam is None or self.webcam.error:
+            reason = self.webcam.error if self.webcam is not None else "câmera desligada"
+            return f"Câmera indisponível ({reason}): usando o teclado   (V: trocar o controle)"
+        if not self.webcam.receiving:
+            return f"Controle: {label}, iniciando...   (V: trocar o controle)"
+        hand = self.control_mode == "mao"
+        if not self.webcam.calibrated:
+            what = ("mantenha a mão parada na posição de repouso" if hand
+                    else "fique parado de frente para a câmera")
+            return f"Câmera ({label}): calibrando, {what} ({int(self.webcam.progress * 100)}%)"
+        if self.webcam.tracked_visible:
+            return f"Câmera ({label}): " + ("mão detectada" if hand else "pessoa detectada")
+        return f"Câmera ({label}): " + ("mostre a mão para a câmera" if hand else "fique na frente da câmera")
+
+    def draw_webcam_overlay(self) -> None:
+        """Calibração, falhas e miniatura da câmera durante o voo."""
+        if not self.uses_camera:
+            return
+        hand = self.control_mode == "mao"
+        if self.webcam is not None and self.webcam_surface is not None:
+            frame = self.webcam_surface.get_rect(bottomleft=(12, HEIGHT - 12))
+            self.screen.blit(self.webcam_surface, frame)
+            pygame.draw.rect(self.screen, rgb("c5e1c7"), frame, 1)
+        if self.webcam is None or self.webcam.error:
+            reason = self.webcam.error if self.webcam is not None else "câmera desligada"
+            text = self.small_font.render(f"Câmera indisponível ({reason}): voando com o teclado",
+                                          True, rgb("ffab91"))
+            self.screen.blit(text, text.get_rect(center=(WIDTH // 2, 170)))
+            return
+        if not self.webcam.calibrated:
+            panel = pygame.Rect(WIDTH // 2 - 260, 150, 520, 92)
+            pygame.draw.rect(self.screen, (12, 24, 18, 225), panel, border_radius=10)
+            pygame.draw.rect(self.screen, rgb("fff59d"), panel, 2, border_radius=10)
+            if hand:
+                hint = ("Mantenha a mão parada na posição de repouso" if self.webcam.tracked_visible
+                        else "Mostre a mão para a câmera")
+            else:
+                hint = ("Fique parado, de frente para a câmera" if self.webcam.tracked_visible
+                        else "Entre no quadro da câmera")
+            title = self.font.render(f"CALIBRANDO: {hint}", True, (255, 255, 255))
+            self.screen.blit(title, title.get_rect(center=(WIDTH // 2, 178)))
+            bar = pygame.Rect(panel.x + 30, panel.bottom - 28, panel.width - 60, 12)
+            pygame.draw.rect(self.screen, (40, 52, 46), bar, border_radius=6)
+            fill = bar.copy()
+            fill.width = int(bar.width * self.webcam.progress)
+            pygame.draw.rect(self.screen, rgb("fff59d"), fill, border_radius=6)
+            return
+        if not self.webcam.tracked_visible:
+            text = self.small_font.render(
+                "Não estou vendo sua mão: volte ela para o quadro da câmera" if hand
+                else "Não estou vendo você: volte para o quadro da câmera",
+                                          True, rgb("ffab91"))
+            self.screen.blit(text, text.get_rect(center=(WIDTH // 2, 170)))
+
+    WEBCAM_DIRECTION_KEYS = {"left": pygame.K_LEFT, "right": pygame.K_RIGHT,
+                             "up": pygame.K_UP, "down": pygame.K_DOWN}
+
+    def apply_webcam_menu(self) -> None:
+        """Transforma os gestos da câmera em teclas nos menus e na tela de fim de jogo.
+
+        Os eventos são consumidos a cada quadro, mesmo no voo, para não acumular
+        gestos feitos durante a partida.
+        """
+        if self.webcam is None:
+            return
+        for event in self.webcam.take_events():
+            if self.control_mode == "mao":
+                key = self.hand_gesture_key(event)
+            else:
+                key = self.body_gesture_key(event)
+            if key is not None:
+                self.handle_key(key)
+
+    def body_gesture_key(self, event: str) -> Optional[int]:
+        """Modo corpo: inclinar = setas; mão direita confirma; mão esquerda = Oficina/cancelar/hangar."""
+        if self.state in ("menu", "paint"):
+            if event == "right_hand":
+                return pygame.K_RETURN                        # decolar ou salvar
+            if event == "left_hand":
+                return pygame.K_ESCAPE if self.state == "paint" else pygame.K_c
+            return self.WEBCAM_DIRECTION_KEYS.get(event)
+        if self.state == "playing" and self.game_over:
+            return {"right_hand": pygame.K_RETURN, "left_hand": pygame.K_c}.get(event)
+        return None
+
+    def hand_gesture_key(self, event: str) -> Optional[int]:
+        """Modo uma mão: lados = setas; cima = piloto/linha; baixo = Oficina/cancelar/hangar;
+        mão levantada = decolar, salvar ou voar de novo."""
+        if self.state == "menu":
+            return {"left": pygame.K_LEFT, "right": pygame.K_RIGHT, "up": pygame.K_DOWN,
+                    "down": pygame.K_c, "raised": pygame.K_RETURN}.get(event)
+        if self.state == "paint":
+            if event == "up":                                 # alterna a linha de cores e a de padrões
+                return pygame.K_UP if self.paint_row == 1 else pygame.K_DOWN
+            return {"left": pygame.K_LEFT, "right": pygame.K_RIGHT,
+                    "down": pygame.K_ESCAPE, "raised": pygame.K_RETURN}.get(event)
+        if self.state == "playing" and self.game_over:
+            return {"raised": pygame.K_RETURN, "down": pygame.K_c}.get(event)
+        return None
+
     def handle_key(self, key: int) -> None:
         if self.state == "menu":
             self.handle_menu_key(key)
@@ -1535,6 +1877,10 @@ class Game:
                 self.start_run()
             elif key in (pygame.K_c, pygame.K_TAB):
                 self.state = "menu"
+            return
+        if key == pygame.K_x and self.cheat_invincible:
+            self.cheat_invincible = False
+            self.cheat_flash = CHEAT_FLASH_TIME
             return
         if key == pygame.K_F3:
             self.show_hitboxes = not self.show_hitboxes
@@ -1575,7 +1921,20 @@ class Game:
             return
         self.held = {self.FLIGHT_KEYS[k] for k in self.pressed_keys}
 
+    def feed_cheat(self, key: int) -> bool:
+        """Guarda as últimas teclas do hangar. True quando a sequência completa (a tecla é consumida)."""
+        self.cheat_keys.append(key)
+        del self.cheat_keys[:-len(CHEAT_CODE)]
+        if tuple(self.cheat_keys) == CHEAT_CODE:
+            self.cheat_keys.clear()
+            self.cheat_armed = True
+            self.cheat_flash = CHEAT_FLASH_TIME
+            return True
+        return False
+
     def handle_menu_key(self, key: int) -> None:
+        if self.feed_cheat(key):
+            return
         if key in (pygame.K_LEFT, pygame.K_a):
             self.plane_index = (self.plane_index - 1) % len(PLANE_MODELS)
         elif key in (pygame.K_RIGHT, pygame.K_d):
@@ -1588,29 +1947,52 @@ class Game:
             self.start_run()
         elif key == pygame.K_c:
             self.open_paint_shop()
+        elif key == pygame.K_v:
+            self.toggle_control_mode()
+        elif key == pygame.K_r and self.webcam is not None:
+            self.webcam.restart_calibration()           # recalibra a posição de repouso
 
     # ------------------------------------------------------ oficina de pintura
     def open_paint_shop(self) -> None:
         self.paint_before = self.plane_color_key
+        self.pattern_before = self.plane_pattern_key
         self.paint_index = PLANE_COLOR_KEYS.index(self.paint_before)
+        self.pattern_index = PLANE_PATTERN_KEYS.index(self.pattern_before)
+        self.paint_row = 1 if self.pattern_before != "liso" else 0
         self.state = "paint"
 
     def set_paint_index(self, index: int) -> None:
-        """Muda a cor do avião atual na hora (prévia ao vivo)."""
+        """Muda a cor do avião atual na hora (prévia ao vivo). Escolher cor volta ao padrão liso."""
         self.paint_index = index % len(PLANE_COLORS)
         self.plane_colors[self.plane_key] = PLANE_COLOR_KEYS[self.paint_index]
+        self.set_pattern_index(0)
+
+    def set_pattern_index(self, index: int) -> None:
+        """Muda o padrão de pintura do avião atual na hora (prévia ao vivo)."""
+        self.pattern_index = index % len(PLANE_PATTERNS)
+        self.plane_patterns[self.plane_key] = PLANE_PATTERN_KEYS[self.pattern_index]
 
     def handle_paint_key(self, key: int) -> None:
-        if key in (pygame.K_LEFT, pygame.K_a, pygame.K_UP, pygame.K_w):
-            self.set_paint_index(self.paint_index - 1)
-        elif key in (pygame.K_RIGHT, pygame.K_d, pygame.K_DOWN, pygame.K_s):
-            self.set_paint_index(self.paint_index + 1)
+        step = 0
+        if key in (pygame.K_LEFT, pygame.K_a):
+            step = -1
+        elif key in (pygame.K_RIGHT, pygame.K_d):
+            step = 1
+        elif key in (pygame.K_UP, pygame.K_w):
+            self.paint_row = 0             # linha das cores
+        elif key in (pygame.K_DOWN, pygame.K_s):
+            self.paint_row = 1             # linha dos padrões
         elif key in (pygame.K_RETURN, pygame.K_SPACE, pygame.K_c):
-            self.save_selection()          # confirma: a cor fica salva para este avião
+            self.save_selection()          # confirma: cor e padrão ficam salvos para este avião
             self.state = "menu"
         elif key in (pygame.K_ESCAPE, pygame.K_BACKSPACE):
-            self.plane_colors[self.plane_key] = self.paint_before   # cancela
+            self.plane_colors[self.plane_key] = self.paint_before      # cancela
+            self.plane_patterns[self.plane_key] = self.pattern_before
             self.state = "menu"
+        if step and self.paint_row == 0:
+            self.set_paint_index(self.paint_index + step)
+        elif step:
+            self.set_pattern_index(self.pattern_index + step)
 
     # ------------------------------------------------------------- colisões
     def get_player_hitbox(self) -> Hitbox:
@@ -1638,8 +2020,9 @@ class Game:
 
     # ------------------------------------------------------------- simulação
     def update_flight(self, dt: float) -> None:
-        ix = (1 if "right" in self.held else 0) - (1 if "left" in self.held else 0)
-        iy = (1 if "up" in self.held else 0) - (1 if "down" in self.held else 0)
+        ax, ay = self.analog
+        ix = clamp((1 if "right" in self.held else 0) - (1 if "left" in self.held else 0) + ax, -1.0, 1.0)
+        iy = clamp((1 if "up" in self.held else 0) - (1 if "down" in self.held else 0) + ay, -1.0, 1.0)
         response = 1.0 - math.exp(-FLIGHT_RESPONSE * dt)
         self.player_vx += (ix * MAX_LATERAL_SPEED - self.player_vx) * response
         self.player_vy += (iy * MAX_VERTICAL_SPEED - self.player_vy) * response
@@ -1657,6 +2040,9 @@ class Game:
         self.cam_x += (cam_target - self.cam_x) * response
 
     def update(self, dt: float) -> None:
+        self.poll_webcam()
+        self.apply_webcam_menu()
+        self.cheat_flash = max(0.0, self.cheat_flash - dt)
         if self.state != "playing" or self.game_over or self.paused:
             return
         dt = min(dt, MAX_DT)
@@ -1666,6 +2052,7 @@ class Game:
         self.magnet_timer = max(0.0, self.magnet_timer - dt)
         self.invulnerable_timer = max(0.0, self.invulnerable_timer - dt)
         self.hit_flash_timer = max(0.0, self.hit_flash_timer - dt)
+        self.update_maneuver(dt)
         difficulty = clamp(self.elapsed / 180.0, 0.0, 1.0)
         self.speed = (BASE_SPEED + self.restoration * RESTORATION_SPEED_GAIN
                       + difficulty * DIFFICULTY_SPEED_GAIN)
@@ -1940,36 +2327,80 @@ class Game:
             if (entity.z < PLAYER_Z) == in_front:
                 self.draw_entity(entity, wave_z)
 
+    def pattern_palette(self, pattern: str) -> Optional[list]:
+        """Textura do padrão como lista de 65536 pixels RGB (índice = linha * 256 + coluna)."""
+        palette = self.pattern_palettes.get(pattern)
+        if palette is None:
+            texture = self.pattern_textures.get(pattern)
+            if texture is None:
+                return None
+            data = pygame.image.tobytes(texture, "RGB")
+            palette = [data[i:i + 3] for i in range(0, len(data), 3)]
+            if len(self.pattern_palettes) >= PATTERN_CACHE_LIMIT:
+                self.pattern_palettes.pop(next(iter(self.pattern_palettes)))
+            self.pattern_palettes[pattern] = palette
+        return palette
+
+    def uv_index(self, menu: bool, combo: str, size: Tuple[int, int]) -> Optional[list]:
+        """Para cada pixel do sprite, o índice do texel do padrão (G = linha, R = coluna)."""
+        key = (menu, combo)
+        index = self.uv_indices.get(key)
+        if index is None:
+            uv = (self.plane_menu_uv if menu else self.plane_uv).get(combo)
+            if uv is None or uv.get_size() != size:
+                return None
+            data = pygame.image.tobytes(uv, "RGB")
+            index = [(g << 8) | r for r, g in zip(data[0::3], data[1::3])]
+            if len(self.uv_indices) >= 8:
+                self.uv_indices.pop(next(iter(self.uv_indices)))
+            self.uv_indices[key] = index
+        return index
+
+    def pattern_fill(self, menu: bool, combo: str, pattern: str, size: Tuple[int, int]) -> Optional[pygame.Surface]:
+        """Imagem do padrão "vestida" no avião (mesmo tamanho do sprite), ou None se faltar algo."""
+        palette = self.pattern_palette(pattern)
+        index = self.uv_index(menu, combo, size) if palette is not None else None
+        if palette is None or index is None:
+            return None
+        return pygame.image.frombytes(b"".join(map(palette.__getitem__, index)), size, "RGB")
+
     def plane_surface(self, menu: bool = False) -> Optional[pygame.Surface]:
-        """Sprite do avião atual, já com a cor da Oficina de pintura aplicada ao papel."""
+        """Sprite do avião atual, já com a cor ou o padrão da Oficina de pintura aplicado ao papel."""
         sprites = self.plane_menu_sprites if menu else self.plane_sprites
         combo = self.plane_combo if self.plane_combo in sprites else f"{self.plane_key}__none"
         base = sprites.get(combo)
         color = self.plane_color
-        if base is None or color is None:
+        pattern = self.plane_pattern_key
+        if base is None or (color is None and pattern == "liso"):
             return base
         paint = (self.plane_menu_paint if menu else self.plane_paint).get(combo)
         if paint is None or paint.get_size() != base.get_size():
             return base
-        key = (menu, combo, self.plane_color_key)
+        key = (menu, combo, self.plane_color_key, pattern)
         painted = self.painted_cache.get(key)
         if painted is None:
-            if len(self.painted_cache) >= 48:
-                self.painted_cache.pop(next(iter(self.painted_cache)))
-            # Papel em branco × cor escolhida, desenhado sobre o original: o piloto
-            # e as peças que não são de papel continuam como estavam.
+            # Papel em branco (com a luz e as dobras) × cor ou padrão, desenhado sobre
+            # o original: o piloto e as peças que não são de papel continuam como estavam.
+            fill = self.pattern_fill(menu, combo, pattern, base.get_size()) if pattern != "liso" else None
+            if fill is None and color is None:
+                return base                # padrão sem textura/mapa UV e cor original
             layer = paint.copy()
-            layer.fill(color, special_flags=pygame.BLEND_RGB_MULT)
+            if fill is not None:
+                layer.blit(fill, (0, 0), special_flags=pygame.BLEND_RGB_MULT)
+            else:
+                layer.fill(color, special_flags=pygame.BLEND_RGB_MULT)
             painted = base.copy()
             painted.blit(layer, (0, 0))
+            if len(self.painted_cache) >= 48:
+                self.painted_cache.pop(next(iter(self.painted_cache)))
             self.painted_cache[key] = painted
         return painted
 
-    def draw_paper_plane_fallback(self, cx: int, cy: int, width: int) -> None:
+    def draw_paper_plane_fallback(self, cx: int, cy: int, width: int, extra_roll: float = 0.0) -> None:
         """Avião de papel desenhado por código, usado se os sprites faltarem (com a cor escolhida)."""
         paint = self.plane_color
         h = width * 0.28
-        angle = math.radians(self.roll)
+        angle = math.radians(self.roll + extra_roll)
         def rot(px: float, py: float) -> Tuple[int, int]:
             return (int(cx + px * math.cos(angle) - py * math.sin(angle)),
                     int(cy + px * math.sin(angle) + py * math.cos(angle)))
@@ -1990,8 +2421,32 @@ class Game:
         bob = math.sin(self.elapsed * 3.0) * 3.0
         sx, sy, scale = self.project(self.player_x, self.player_y + bob, PLAYER_Z)
         width = max(8, int(PLANE_WIDTH * scale))
+        pose = self.maneuver_pose()
+        if pose is not None:
+            # Manobra (só visual): desloca, gira, achata/inverte e afasta o desenho.
+            m_roll, m_pitch, m_dx, m_dy, m_dz = pose
+            style = MANEUVER_STYLES[self.maneuver]
+            sx += m_dx * style.sway * width
+            sy = max(MANEUVER_TOP_MARGIN, sy - m_dy * style.lift * width)   # não sai pelo alto da tela
+            depth = 1.0 / max(0.4, 1.0 + style.depth * m_dz)
         sprite = self.plane_surface()
-        if sprite is not None:
+        if sprite is not None and pose is not None:
+            aspect = sprite.get_height() / max(1, sprite.get_width())
+            height = max(4, int(width * aspect))
+            max_h = int(120 * scale)
+            if height > max_h:
+                height = max_h
+                width = max(8, int(height / aspect))
+            vertical = math.cos(math.radians(m_pitch))
+            thickness = round(max(MANEUVER_MIN_THICKNESS, abs(vertical)) * 25) / 25
+            size = (max(8, int(width * depth)), max(3, int(height * depth * thickness)))
+            img = self.scaled_sprite(sprite, ("plane", self.plane_look), size)
+            if vertical < 0:               # de cabeça para baixo (topo do looping)
+                img = pygame.transform.flip(img, False, True)
+            rotated = pygame.transform.rotozoom(img, self.roll + m_roll, 1.0)
+            self.screen.blit(rotated, rotated.get_rect(center=(int(sx), int(sy))))
+            width = size[0]
+        elif sprite is not None:
             aspect = sprite.get_height() / max(1, sprite.get_width())
             height = max(4, int(width * aspect))
             # Pilotos altos aumentam o sprite; limita a altura para não cobrir a tela.
@@ -2010,7 +2465,7 @@ class Game:
                 self.flipped_sprite_cache[cache_key] = rotated
             self.screen.blit(rotated, rotated.get_rect(center=(int(sx), int(sy))))
         else:
-            self.draw_paper_plane_fallback(int(sx), int(sy), width)
+            self.draw_paper_plane_fallback(int(sx), int(sy), width, pose[0] if pose else 0.0)
         if self.shield_timer > 0:
             pygame.draw.ellipse(
                 self.screen, rgb("40c4ff"),
@@ -2113,31 +2568,60 @@ class Game:
         pilot_label = self.font.render(f"Piloto: {PILOTS[self.pilot_index][1]}", True, rgb("fff59d"))
         self.screen.blit(plane_label, plane_label.get_rect(center=(WIDTH // 2, 478)))
         self.screen.blit(pilot_label, pilot_label.get_rect(center=(WIDTH // 2, 506)))
-        hints = [
-            "← / → ou A / D: trocar avião     ↑ / ↓ ou W / S: trocar piloto",
-            f"C: oficina de pintura (cor: {PLANE_COLORS[PLANE_COLOR_KEYS.index(self.plane_color_key)][1]})"
-            "     ENTER ou ESPAÇO: decolar",
-            f"Recorde: {self.high_score:,}",
-        ]
+        status = self.small_font.render(self.webcam_hangar_status(), True, rgb("fff59d"))
+        self.screen.blit(status, status.get_rect(center=(WIDTH // 2, 532)))
+        if self.control_mode == "mao":
+            hints = [
+                "Mão para os lados: trocar avião     Mão para cima: trocar piloto",
+                "Mão levantada: decolar     Mão para baixo: oficina de pintura",
+                f"R: recalibrar     V: trocar o controle     Recorde: {self.high_score:,}",
+            ]
+        elif self.control_mode == "camera":
+            hints = [
+                "Corpo ← / →: trocar avião     Corpo ↑ / ↓: trocar piloto",
+                "Mão direita levantada: decolar     Mão esquerda levantada: oficina de pintura",
+                f"R: recalibrar     V: trocar o controle     Recorde: {self.high_score:,}",
+            ]
+        else:
+            hints = [
+                "← / → ou A / D: trocar avião     ↑ / ↓ ou W / S: trocar piloto",
+                f"C: oficina de pintura ({self.paint_label()})     V: controle por câmera (corpo ou uma mão)",
+                f"ENTER ou ESPAÇO: decolar          Recorde: {self.high_score:,}",
+            ]
         for i, line in enumerate(hints):
             surf = self.small_font.render(line, True, rgb("c5e1c7"))
-            self.screen.blit(surf, surf.get_rect(center=(WIDTH // 2, 548 + i * 24)))
+            self.screen.blit(surf, surf.get_rect(center=(WIDTH // 2, 556 + i * 22)))
+        if self.uses_camera and self.webcam is not None and self.webcam_surface is not None:
+            self.screen.blit(self.webcam_surface, self.webcam_surface.get_rect(topright=(WIDTH - 24, 96)))
+            pygame.draw.rect(self.screen, rgb("c5e1c7"),
+                             self.webcam_surface.get_rect(topright=(WIDTH - 24, 96)), 1)
+
+    def pattern_thumb(self, pattern: str, size: Tuple[int, int]) -> Optional[pygame.Surface]:
+        key = (pattern, size)
+        thumb = self.pattern_thumbs.get(key)
+        if thumb is None:
+            texture = self.pattern_textures.get(pattern)
+            if texture is None:
+                return None
+            thumb = pygame.transform.smoothscale(texture, size)
+            self.pattern_thumbs[key] = thumb
+        return thumb
 
     def draw_paint_menu(self) -> None:
-        """Oficina de pintura: escolha da cor do papel do avião, com prévia ao vivo."""
+        """Oficina de pintura: cor do papel (linha 1) ou padrão do estúdio (linha 2), com prévia ao vivo."""
         overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
         overlay.fill((5, 10, 9, 205))
         self.screen.blit(overlay, (0, 0))
         accent = self.current_stage().accent
         title = self.title_font.render("OFICINA DE PINTURA", True, accent)
-        self.screen.blit(title, title.get_rect(center=(WIDTH // 2, 40)))
+        self.screen.blit(title, title.get_rect(center=(WIDTH // 2, 34)))
         name = self.font.render(PLANE_MODELS[self.plane_index][1], True, (255, 255, 255))
-        self.screen.blit(name, name.get_rect(center=(WIDTH // 2, 78)))
+        self.screen.blit(name, name.get_rect(center=(WIDTH // 2, 68)))
 
         bob = math.sin(pygame.time.get_ticks() / 400.0) * 5
         cards = (
-            (pygame.Rect(60, 100, 600, 330), True, "Hangar (3/4)"),
-            (pygame.Rect(690, 100, 350, 330), False, "Em voo"),
+            (pygame.Rect(60, 88, 600, 292), True, "Hangar (3/4)"),
+            (pygame.Rect(690, 88, 350, 292), False, "Em voo"),
         )
         for card, menu_view, label in cards:
             pygame.draw.rect(self.screen, (18, 30, 26), card, border_radius=14)
@@ -2154,31 +2638,71 @@ class Game:
             else:
                 self.draw_paper_plane_fallback(box.centerx, box.centery, int(box.width * 0.7))
 
-        # Paleta em uma linha; a cor selecionada fica maior e contornada.
-        swatch_w, gap = 52, 8
-        total = len(PLANE_COLORS) * swatch_w + (len(PLANE_COLORS) - 1) * gap
-        x0, y0 = (WIDTH - total) // 2, 456
-        for i, (_, _, color) in enumerate(PLANE_COLORS):
-            rect = pygame.Rect(x0 + i * (swatch_w + gap), y0, swatch_w, 44)
-            if i == self.paint_index:
-                rect = rect.inflate(8, 10)
+        swatch_w, swatch_h, gap = 52, 40, 8
+        pattern_on = self.plane_pattern_key != "liso"
+
+        def row_label(text: str, y: int, active: bool) -> None:
+            color = accent if active else rgb("8fa89a")
+            surf = self.small_font.render(("▶ " if active else "") + text, True, color)
+            self.screen.blit(surf, surf.get_rect(center=(WIDTH // 2, y)))
+
+        def swatch_rects(count: int, y: int):
+            total = count * swatch_w + (count - 1) * gap
+            x0 = (WIDTH - total) // 2
+            return [pygame.Rect(x0 + i * (swatch_w + gap), y, swatch_w, swatch_h) for i in range(count)]
+
+        # Linha 1: cores lisas. Com um padrão escolhido, ela fica apagada.
+        row_label("COR" + ("  (o padrão usa as cores próprias; escolher uma cor volta ao liso)" if pattern_on else ""),
+                  398, self.paint_row == 0)
+        for i, ((_, _, color), rect) in enumerate(zip(PLANE_COLORS, swatch_rects(len(PLANE_COLORS), 410))):
+            selected = i == self.paint_index and not pattern_on
+            if selected:
+                rect = rect.inflate(8, 8)
             if color is None:   # "original": metade papel, metade azul do estúdio
                 pygame.draw.rect(self.screen, (245, 245, 240), rect, border_radius=8)
                 pygame.draw.polygon(self.screen, rgb("3b82f6"), [rect.topright, rect.bottomright, rect.bottomleft])
             else:
                 pygame.draw.rect(self.screen, color, rect, border_radius=8)
-            outline = accent if i == self.paint_index else (70, 80, 78)
-            pygame.draw.rect(self.screen, outline, rect, 3 if i == self.paint_index else 1, border_radius=8)
-        chosen = self.font.render(f"Cor: {PLANE_COLORS[self.paint_index][1]}", True, rgb("fff59d"))
-        self.screen.blit(chosen, chosen.get_rect(center=(WIDTH // 2, 530)))
+            if pattern_on:
+                shade = pygame.Surface(rect.size, pygame.SRCALPHA)
+                shade.fill((5, 10, 9, 150))
+                self.screen.blit(shade, rect)
+            outline = accent if selected and self.paint_row == 0 else ((200, 210, 205) if selected else (70, 80, 78))
+            pygame.draw.rect(self.screen, outline, rect, 3 if selected else 1, border_radius=8)
+
+        # Linha 2: padrões do estúdio (miniatura da textura).
+        row_label("PADRÃO", 474, self.paint_row == 1)
+        for i, ((key, _), rect) in enumerate(zip(PLANE_PATTERNS, swatch_rects(len(PLANE_PATTERNS), 486))):
+            selected = i == self.pattern_index if pattern_on else key == "liso"
+            if selected:
+                rect = rect.inflate(8, 8)
+            thumb = self.pattern_thumb(key, rect.size) if key != "liso" else None
+            if thumb is not None:
+                self.screen.blit(thumb, rect)
+            else:
+                pygame.draw.rect(self.screen, (245, 245, 240) if key == "liso" else (60, 66, 64), rect, border_radius=8)
+                text = self.small_font.render("Liso" if key == "liso" else "?", True, (40, 46, 44))
+                self.screen.blit(text, text.get_rect(center=rect.center))
+            outline = accent if selected and self.paint_row == 1 else ((200, 210, 205) if selected else (70, 80, 78))
+            pygame.draw.rect(self.screen, outline, rect, 3 if selected else 1, border_radius=8)
+
+        if pattern_on:
+            chosen_text = f"Padrão: {PLANE_PATTERNS[PLANE_PATTERN_KEYS.index(self.plane_pattern_key)][1]}"
+        else:
+            chosen_text = f"Cor: {PLANE_COLORS[self.paint_index][1]}"
+        chosen = self.font.render(chosen_text, True, rgb("fff59d"))
+        self.screen.blit(chosen, chosen.get_rect(center=(WIDTH // 2, 552)))
         hints = [
-            "← / → ou A / D: escolher a cor (prévia na hora)",
-            "ENTER, ESPAÇO ou C: confirmar     ESC: cancelar",
-            "A cor vale só para o papel deste avião; o piloto não muda.",
+            "↑ / ↓ ou W / S: linha de cores ou de padrões     ← / → ou A / D: escolher (prévia na hora)",
+            "ENTER, ESPAÇO ou C: confirmar     ESC: cancelar     A pintura vale só para o papel deste avião.",
         ]
+        if self.control_mode == "mao":
+            hints.append("Mão para os lados: escolher     para cima: trocar linha     levantada: salvar     para baixo: cancelar")
+        elif self.control_mode == "camera":
+            hints.append("Corpo ← / → e ↑ / ↓: escolher     Mão direita: salvar     Mão esquerda: cancelar")
         for i, line in enumerate(hints):
             surf = self.small_font.render(line, True, rgb("c5e1c7"))
-            self.screen.blit(surf, surf.get_rect(center=(WIDTH // 2, 566 + i * 24)))
+            self.screen.blit(surf, surf.get_rect(center=(WIDTH // 2, 584 + i * 24)))
 
     def draw(self) -> None:
         self.draw_background()
@@ -2187,6 +2711,7 @@ class Game:
                 self.draw_menu()
             else:
                 self.draw_paint_menu()
+            self.draw_cheat_flash()
             pygame.display.flip()
             return
         self.draw_entities(in_front=False)
@@ -2194,6 +2719,7 @@ class Game:
         self.draw_entities(in_front=True)
         self.draw_floating_texts()
         self.draw_hud()
+        self.draw_webcam_overlay()
         if self.hit_flash_timer > 0:
             flash = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
             alpha = int(125 * self.hit_flash_timer / 0.28)
@@ -2206,9 +2732,20 @@ class Game:
             self.draw_overlay(
                 "FIM DE JOGO",
                 f"Resíduos coletados: {self.trash_cleaned:,}   Recorde: {self.high_score:,}",
-                "ENTER ou ESPAÇO: voar de novo   |   C: trocar avião no hangar",
+                "ENTER ou ESPAÇO: voar de novo   |   C: trocar avião no hangar"
+                + {"mao": "   |   Mão levantada: voar de novo   Mão para baixo: hangar",
+                   "camera": "   |   Mão direita: voar de novo   Mão esquerda: hangar"}.get(self.control_mode, ""),
             )
+        self.draw_cheat_flash()
         pygame.display.flip()
+
+    def draw_cheat_flash(self) -> None:
+        """Brilho rápido, sem texto, quando o código secreto liga ou desliga."""
+        if self.cheat_flash <= 0:
+            return
+        glow = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        glow.fill((255, 236, 150, int(90 * self.cheat_flash / CHEAT_FLASH_TIME)))
+        self.screen.blit(glow, (0, 0))
 
     def draw_overlay(self, title: str, subtitle: str, hint: str = "") -> None:
         overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
@@ -2250,6 +2787,7 @@ class Game:
                     self.running = False
         finally:
             # Salva recorde e avião escolhido mesmo se a janela for fechada ou houver erro.
+            self.stop_webcam()
             self.save_high_score()
             self.save_selection()
             pygame.quit()
@@ -2295,10 +2833,24 @@ def run_self_test(frames: int) -> int:
     game.handle_key(pygame.K_c)       # abre a oficina de pintura,
     game.handle_key(pygame.K_RIGHT)   # testa uma cor
     game.draw()
-    game.handle_key(pygame.K_ESCAPE)  # e cancela (não altera a cor salva do jogador)
-    report["paint_shop"] = {"colors": len(PLANE_COLORS), "back_to": game.state,
-                            "paint_layers": len(game.plane_paint), "menu_paint_layers": len(game.plane_menu_paint)}
+    game.handle_key(pygame.K_DOWN)    # linha dos padrões
+    game.handle_key(pygame.K_RIGHT)   # testa um padrão
+    game.draw()
+    patterned = game.plane_surface() is not game.plane_sprites.get(game.plane_combo)
+    game.handle_key(pygame.K_ESCAPE)  # e cancela (não altera a pintura salva do jogador)
+    report["paint_shop"] = {"colors": len(PLANE_COLORS), "patterns": len(game.pattern_textures),
+                            "pattern_applied": patterned, "back_to": game.state,
+                            "paint_layers": len(game.plane_paint), "menu_paint_layers": len(game.plane_menu_paint),
+                            "uv_maps": len(game.plane_uv), "menu_uv_maps": len(game.plane_menu_uv)}
     game.start_run()
+    # Cada manobra desenhada em algumas fases (só visual).
+    for name, style in MANEUVER_STYLES.items():
+        for frac in (0.25, 0.5, 0.75):
+            game.start_maneuver(name)
+            game.maneuver_time = style.duration * frac
+            game.draw()
+    report["maneuvers"] = {name: len(rows) for name, rows in game.maneuver_curves.items()}
+    game.start_maneuver(START_MANEUVER)
     # Comandos simulados nas 4 direções (um de cada vez), injetados por quadro.
     pattern = [pygame.K_UP, pygame.K_RIGHT, pygame.K_DOWN, pygame.K_LEFT]
     step = max(1, frames // (len(pattern) + 1))

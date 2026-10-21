@@ -219,7 +219,8 @@ def test_selecao_persiste_entre_instancias(isolated_data_dir):
     first.pilot_index = 5
     first.handle_key(pygame.K_RETURN)          # decolar grava a escolha
     config = json.loads((eco_runner.user_data_dir() / CONFIG_FILENAME).read_text(encoding="utf-8"))
-    assert config == {"aviao": PLANE_MODELS[3][0], "piloto": PILOTS[5][0], "cores": {}}
+    assert config == {"aviao": PLANE_MODELS[3][0], "piloto": PILOTS[5][0], "cores": {}, "padroes": {},
+                      "controle": "teclado"}
     second = Game()
     assert (second.plane_index, second.pilot_index) == (3, 5)
 
@@ -973,3 +974,169 @@ def test_cor_pinta_so_o_papel_e_mantem_o_piloto(game):
     assert paper > 200 and pilot > 5
     game.plane_colors[game.plane_key] = "original"        # original: sprite do estúdio sem tinta
     assert game.plane_surface() is base
+
+
+# ------------------------------------------------- padrões de pintura (Oficina)
+def test_mapas_uv_e_texturas_dos_padroes_estao_presentes(game):
+    assert len(game.plane_uv) == 77 and len(game.plane_menu_uv) == 77
+    for combo, uv in game.plane_uv.items():
+        assert uv.get_size() == game.plane_sprites[combo].get_size(), combo
+    for combo, uv in game.plane_menu_uv.items():
+        assert uv.get_size() == game.plane_menu_sprites[combo].get_size(), combo
+    assert set(game.pattern_textures) == set(eco_runner.PLANE_PATTERN_KEYS[1:])
+    for texture in game.pattern_textures.values():
+        assert texture.get_size() == (256, 256)
+
+
+def test_oficina_linha_de_padroes_previa_cancelar_e_salvar(isolated_data_dir):
+    game = Game()
+    keys = eco_runner.PLANE_PATTERN_KEYS
+    game.handle_key(pygame.K_c)
+    assert game.paint_row == 0
+    game.handle_key(pygame.K_DOWN)                        # vai para a linha dos padrões
+    assert game.paint_row == 1
+    game.handle_key(pygame.K_RIGHT)                       # prévia na hora
+    assert game.plane_pattern_key == keys[1]
+    assert game.plane_color_key == "original"             # a cor não muda nessa linha
+    game.draw()
+    game.handle_key(pygame.K_ESCAPE)                      # cancela
+    assert game.state == "menu" and game.plane_pattern_key == "liso"
+
+    game.handle_key(pygame.K_c)
+    game.handle_key(pygame.K_s)
+    game.handle_key(pygame.K_LEFT)                        # dá a volta: último padrão
+    assert game.plane_pattern_key == keys[-1]
+    game.handle_key(pygame.K_RETURN)
+    config = json.loads((eco_runner.user_data_dir() / CONFIG_FILENAME).read_text(encoding="utf-8"))
+    assert config["padroes"] == {game.plane_key: keys[-1]}
+    assert Game().plane_pattern_key == keys[-1]           # reabrir o jogo mantém o padrão
+
+    game.handle_key(pygame.K_c)                           # com padrão, a oficina abre na linha 2
+    assert game.paint_row == 1
+    game.handle_key(pygame.K_UP)
+    game.handle_key(pygame.K_RIGHT)                       # escolher uma cor volta ao liso
+    assert game.plane_pattern_key == "liso"
+    assert game.plane_color_key == eco_runner.PLANE_COLOR_KEYS[1]
+
+
+def test_config_com_padrao_invalido_e_ignorado(isolated_data_dir):
+    path = eco_runner.user_data_dir() / CONFIG_FILENAME
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"aviao": "dart", "piloto": "zen",
+                                "padroes": {"dart": "nao_existe", "glider": "xadrez", "xyz": "xadrez"}}),
+                    encoding="utf-8")
+    game = Game()
+    assert game.plane_patterns == {"glider": "xadrez"}
+    assert game.plane_pattern_key == "liso"
+
+
+def test_padrao_veste_so_o_papel_e_mantem_o_piloto(game):
+    game.plane_index = 0
+    game.pilot_index = 1
+    combo = game.plane_combo
+    base = game.plane_sprites[combo]
+    paint = game.plane_paint[combo]
+    game.plane_patterns[game.plane_key] = "xadrez"
+    painted = game.plane_surface()
+    assert painted.get_size() == base.get_size()
+    w, h = base.get_size()
+    dark = light = pilot = 0
+    for x in range(0, w, 2):
+        for y in range(0, h, 2):
+            p = paint.get_at((x, y))
+            b = base.get_at((x, y))
+            c = painted.get_at((x, y))
+            if p.a == 255:
+                lum = (c.r + c.g + c.b) / 3
+                dark += lum < 60
+                light += lum > 150
+            elif p.a == 0 and b.a == 255:
+                assert tuple(c) == tuple(b), (x, y)
+                pilot += 1
+    assert dark > 50 and light > 50 and pilot > 5          # casas pretas e brancas no papel
+    game.plane_colors[game.plane_key] = "vermelho"        # com padrão, a cor não é usada
+    assert pygame.image.tobytes(game.plane_surface(), "RGBA") == pygame.image.tobytes(painted, "RGBA")
+
+
+def test_padrao_sem_mapa_uv_usa_a_cor(game):
+    game.plane_index = 0
+    game.pilot_index = 1
+    combo = game.plane_combo
+    game.plane_uv.pop(combo)
+    game.plane_patterns[game.plane_key] = "galaxia"
+    assert game.plane_surface() is game.plane_sprites[combo]       # sem cor: original
+    game.plane_colors[game.plane_key] = "vermelho"
+    tinted = game.plane_surface()
+    game.plane_patterns[game.plane_key] = "liso"
+    solid = game.plane_surface()
+    assert pygame.image.tobytes(tinted, "RGBA") == pygame.image.tobytes(solid, "RGBA")
+
+
+# -------------------------------------------------------------------- manobras
+def test_manobras_carregadas_do_pacote_3d(game):
+    curves = game.maneuver_curves
+    assert set(curves) == set(eco_runner.MANEUVER_STYLES)
+    for name, rows in curves.items():
+        assert rows[0][0] == 0.0 and rows[-1][0] == 1.0, name
+        assert all(a[0] < b[0] for a, b in zip(rows, rows[1:])), name
+        assert all(abs(v) < 1e-3 for v in rows[-1][3:]), name     # termina no lugar
+    assert abs(curves["tonneau"][-1][1]) == pytest.approx(360.0, abs=1.0)
+    assert max(r[2] for r in curves["looping"]) == pytest.approx(360.0, abs=1.0)
+    assert 60.0 < max(r[2] for r in curves["cobra"]) < 90.0
+    data = json.loads((PROJECT_DIR / "assets" / "maneuvers" / "maneuvers.json").read_text(encoding="utf-8"))
+    assert data["tonneau"]["source"].endswith(".gltf")
+
+
+def test_sem_json_de_manobras_usa_curvas_de_reserva(tmp_path, monkeypatch):
+    monkeypatch.setattr(eco_runner, "asset_dir_candidates", lambda name: [tmp_path / name])
+    curves = eco_runner.load_maneuvers()
+    assert set(curves) == set(eco_runner.MANEUVER_STYLES)
+    assert curves["tonneau"][-1][1] == pytest.approx(-360.0)
+
+
+def test_decolar_faz_a_manobra_de_decolagem(game):
+    start_flight(game)
+    assert game.maneuver == eco_runner.START_MANEUVER
+    advance(game, eco_runner.MANEUVER_STYLES[eco_runner.START_MANEUVER].duration + 0.1)
+    assert game.maneuver is None and game.maneuver_pose() is None
+
+
+@pytest.mark.parametrize("kind", ["shield", "magnet", "repair"])
+def test_power_up_dispara_manobra_so_visual(game, kind):
+    start_flight(game)
+    game.maneuver = None
+    before = game.get_player_hitbox()
+    add(game, kind, lane=0, y=game.player_y)
+    game.player_x = 0.0
+    game.update(DT)
+    expected = eco_runner.POWERUP_MANEUVERS[kind]
+    assert game.maneuver == expected
+    after = game.get_player_hitbox()
+    assert (after.x_min, after.y_min, after.z_min) == pytest.approx((before.x_min, before.y_min, before.z_min), abs=1.0)  # a colisão não se move
+    duration = eco_runner.MANEUVER_STYLES[expected].duration
+    for frac in (0.25, 0.5, 0.75):
+        game.maneuver = expected
+        game.maneuver_time = duration * frac
+        game.draw()                                       # não pode falhar em nenhuma fase
+    game.maneuver_time = 0.0
+    advance(game, duration + 0.1)
+    assert game.maneuver is None
+
+
+def test_looping_inverte_e_sobe_o_aviao_no_topo(game):
+    start_flight(game)
+    game.entities.clear()
+    game.maneuver = None
+    game.draw()
+    normal = game.screen.copy()
+    game.start_maneuver("looping")
+    game.maneuver_time = eco_runner.MANEUVER_STYLES["looping"].duration * 0.5
+    roll, pitch, dx, dy, dz = game.maneuver_pose()
+    assert pitch == pytest.approx(180.0, abs=10.0) and dy > 0.9
+    game.draw()
+    _, sy, _ = game.project(game.player_x, game.player_y, PLAYER_Z)
+    # Algo foi desenhado acima da posição normal do avião (o topo do looping).
+    rows_changed = [y for y in range(0, int(sy) - 60, 4)
+                    if any(game.screen.get_at((x, y)) != normal.get_at((x, y))
+                           for x in range(WIDTH // 2 - 120, WIDTH // 2 + 120, 6))]
+    assert rows_changed

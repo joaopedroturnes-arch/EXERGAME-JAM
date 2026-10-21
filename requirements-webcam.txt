@@ -1,0 +1,5 @@
+# Opcional: controle do avião pelo movimento do corpo, com a webcam.
+# Sem estas bibliotecas o jogo funciona normalmente, só com o teclado.
+# O MediaPipe ainda não tem roda para todas as versões do Python: use Python 3.10 a 3.13.
+mediapipe>=0.10.14
+opencv-python-headless>=4.8

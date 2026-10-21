@@ -15,12 +15,13 @@ ROOT = Path(SPECPATH).resolve()
 ONEFILE = os.environ.get("ECO_ONEFILE") == "1"
 CONSOLE = os.environ.get("ECO_CONSOLE") == "1"
 
-ASSET_EXTS = {".png", ".json", ".obj", ".mtl", ".jpg", ".jpeg"}
+ASSET_EXTS = {".png", ".json", ".obj", ".mtl", ".jpg", ".jpeg", ".task"}
 OPTIONAL_DIRS = [
     "dieselpunk_sprites", "powerup_sprites", "powerup_models",
     "solarpunk_sprites", "trash_sprites", "plane_sprites", "plane_menu",
     "scenario_sprites", "skyline_sprites", "atmosphere", "ground",
-    "plane_paint", "plane_menu_paint",
+    "plane_paint", "plane_menu_paint", "plane_uv", "plane_menu_uv",
+    "plane_patterns", "maneuvers", "pose_model",
 ]
 
 datas = []

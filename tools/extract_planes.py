@@ -9,13 +9,26 @@ renderizado com o próprio motor three.js do estúdio, com fundo transparente:
   assets/plane_menu/<modelo>__<piloto>.png         vista 3/4 (hangar)
   assets/plane_paint/<modelo>__<piloto>.png        camada de pintura da vista de trás
   assets/plane_menu_paint/<modelo>__<piloto>.png   camada de pintura da vista 3/4
+  assets/plane_uv/<modelo>__<piloto>.png           mapa UV do papel (vista de trás)
+  assets/plane_menu_uv/<modelo>__<piloto>.png      mapa UV do papel (vista 3/4)
+  assets/plane_patterns/<padrão>.png               texturas dos padrões de pintura do estúdio
   assets/plane_sprites/catalog.json                nomes dos modelos e pilotos
 
 A camada de pintura é o papel do avião renderizado em branco, só nos pixels em
 que o papel aparece (o piloto e as peças que não são de papel ficam de fora).
 O jogo multiplica essa camada pela cor escolhida na Oficina de pintura e a
-desenha sobre o sprite original. As quatro imagens de uma combinação usam a
-mesma câmera e o mesmo recorte, então se encaixam pixel a pixel.
+desenha sobre o sprite original. As imagens de uma combinação usam a mesma
+câmera e o mesmo recorte, então se encaixam pixel a pixel.
+
+O mapa UV guarda, em cada pixel do papel, a coordenada da textura do estúdio
+(R = coluna, G = linha da imagem, de 0 a 255). Com ele o jogo "veste" o avião
+com os padrões de pintura do estúdio (camuflado, chamas, galáxia...) sem
+precisar de uma imagem por padrão e por combinação: basta consultar a textura
+do padrão (256×256) pixel a pixel. As texturas são desenhadas pela própria
+função drawSchemeBackground do estúdio, com as cores dos presets dele.
+
+Para só acrescentar os mapas UV e os padrões a um conjunto já extraído:
+    python tools/extract_planes.py ... --passes uv
 
 <piloto> = none | riding | surfing | zen | waving | superman | wheelchair
 
@@ -44,8 +57,41 @@ PILOT_LABELS = {
     "waving": "Acenando", "superman": "Super-herói", "wheelchair": "Cadeira de rodas",
 }
 
+# Padrões de pintura: (chave do jogo, esquema do estúdio, cor 1, cor 2), tirados dos presets do estúdio.
+PATTERNS = [
+    ("camuflado", "camo", "#365314", "#14532d"),
+    ("deserto", "camo", "#d6bc8b", "#78350f"),
+    ("artico", "camo", "#e2e8f0", "#334155"),
+    ("chamas", "flames", "#111827", "#ef4444"),
+    ("plasma", "flames", "#090d16", "#3b82f6"),
+    ("galaxia", "galaxy", "#1e1b4b", "#a855f7"),
+    ("cyberpunk", "cyberpunk", "#0f172a", "#ec4899"),
+    ("tigre", "tiger", "#f59e0b", "#111827"),
+    ("hexagonal", "carbon", "#090d16", "#10b981"),
+    ("prisma", "dazzle", "#0284c7", "#f43f5e"),
+    ("xadrez", "checkered", "#f8fafc", "#111827"),
+    ("listras", "racing_stripes", "#2563eb", "#f8fafc"),
+    ("raios", "sunburst", "#fef08a", "#ea580c"),
+    ("pop_art", "halftone", "#fde047", "#dc2626"),
+    ("brasil", "wingtips", "#fde047", "#16a34a"),
+]
+
+PATTERN_JS = r"""
+({scheme, hex, secondaryHex, size}) => {
+  const big = document.createElement('canvas');
+  big.width = 1024; big.height = 1024;
+  drawSchemeBackground(big.getContext('2d'), { scheme, hex, secondaryHex, finish: 'paper' });
+  const small = document.createElement('canvas');
+  small.width = size; small.height = size;
+  const ctx = small.getContext('2d');
+  ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(big, 0, 0, size, size);
+  return small.toDataURL('image/png');
+}
+"""
+
 RENDER_JS = r"""
-async ({key, pilot, view, size}) => {
+async ({key, pilot, view, size, passes}) => {
   isFlightActive = false; isAutoRotate = false;
   if (windLinesGroup) windLinesGroup.visible = false;
   const wantPilot = pilot !== 'none';
@@ -94,38 +140,69 @@ async ({key, pilot, view, size}) => {
   cam.position.copy(center).addScaledVector(dir, dist);
   cam.lookAt(center);
   const shot = () => { r.render(scene, cam); return r.domElement.toDataURL('image/png'); };
+  const out = {};
 
-  // 1) Original: cores padrão do estúdio (as "da foto").
-  const original = shot();
+  // 1) Original: cores padrão do estúdio (as "da foto"). Sempre: define o recorte.
+  out.original = shot();
 
+  const paperMat = getMaterialMap()[key];
+  const paperTex = modelTextures[key];
+  const isPaper = m => !!m && (m === paperMat || (paperTex && m.map === paperTex));
+  const swapMaterials = (paperMaterial, otherMaterial, lineMaterial) => {
+    const swapped = [];
+    target.traverse(o => {
+      if (!o.material) return;
+      swapped.push([o, o.material]);
+      if (o.isLine || o.isLineSegments) { o.material = lineMaterial; return; }
+      const m = o.material;
+      const paper = Array.isArray(m) ? m.some(isPaper) : isPaper(m);
+      o.material = paper ? paperMaterial : otherMaterial;
+    });
+    return () => swapped.forEach(([o, m]) => { o.material = m; });
+  };
+  const blackMat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide });
+  const blackLine = new THREE.LineBasicMaterial({ color: 0x000000 });
+
+  if (passes.includes('paint')) {
   // 2) Papel em branco liso: base que o jogo tinge com a cor escolhida.
   const state = modelColorState[key];
   const saved = Object.assign({}, state);
   Object.assign(state, { scheme: 'solid', hex: '#ffffff', secondaryHex: '#ffffff', finish: 'paper' });
   refreshModelVisuals(key);
-  const white = shot();
+  out.white = shot();
   Object.assign(state, saved);
   refreshModelVisuals(key);
 
   // 3) Máscara: papel do avião em branco, todo o resto (piloto, rodas, hastes) em preto.
-  const paperMat = getMaterialMap()[key];
-  const paperTex = modelTextures[key];
-  const isPaper = m => !!m && (m === paperMat || (paperTex && m.map === paperTex));
   const whiteMat = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
-  const blackMat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide });
-  const blackLine = new THREE.LineBasicMaterial({ color: 0x000000 });
-  const swapped = [];
-  target.traverse(o => {
-    if (!o.material) return;
-    swapped.push([o, o.material]);
-    if (o.isLine || o.isLineSegments) { o.material = blackLine; return; }
-    const m = o.material;
-    const paper = Array.isArray(m) ? m.some(isPaper) : isPaper(m);
-    o.material = paper ? whiteMat : blackMat;
-  });
-  const mask = shot();
-  swapped.forEach(([o, m]) => { o.material = m; });
-  return { original, white, mask };
+  const restore = swapMaterials(whiteMat, blackMat, blackLine);
+  out.mask = shot();
+  restore();
+  }
+
+  if (passes.includes('uv')) {
+    // 4) Mapa UV: R = coluna e G = linha da textura do papel (a textura do estúdio
+    // repete e é carregada de cabeça para baixo, daí fract() e 1 - v).
+    const uvMat = new THREE.ShaderMaterial({
+      side: THREE.DoubleSide,
+      vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: 'varying vec2 vUv; void main() { vec2 f = fract(vUv); gl_FragColor = vec4(f.x, 1.0 - f.y, 1.0, 1.0); }',
+    });
+    const restore = swapMaterials(uvMat, blackMat, blackLine);
+    r.setClearColor(0x000000, 1);
+    // Sem suavização: a média de duas coordenadas na borda não é uma coordenada válida.
+    if (!window.__uvRenderer) {
+      window.__uvRenderer = new THREE.WebGLRenderer({ antialias: false, alpha: false, preserveDrawingBuffer: true });
+    }
+    const ru = window.__uvRenderer;
+    ru.setPixelRatio(1); ru.setSize(size, size); ru.setClearColor(0x000000, 1);
+    ru.outputEncoding = THREE.LinearEncoding; ru.toneMapping = THREE.NoToneMapping;
+    ru.render(scene, cam);
+    out.uv = ru.domElement.toDataURL('image/png');
+    r.setClearColor(0x000000, 0);
+    restore();
+  }
+  return out;
 }
 """
 
@@ -134,13 +211,15 @@ def decode(data_url: str) -> Image.Image:
     return Image.open(io.BytesIO(base64.b64decode(data_url.split(",", 1)[1]))).convert("RGBA")
 
 
-def fit(img: Image.Image, bbox, max_side: int) -> Image.Image:
+def fit(img: Image.Image, bbox, max_side: int, resample=Image.LANCZOS) -> Image.Image:
     """Recorta pelo contorno do sprite original e ajusta ao tamanho final (mesma conta para as camadas)."""
     if bbox:
         img = img.crop(bbox)
     img = img.copy()
-    img.thumbnail((max_side - 8, max_side - 8), Image.LANCZOS)
-    canvas = Image.new("RGBA", (img.width + 8, img.height + 8), (0, 0, 0, 0))
+    # reducing_gap=None: sem pré-redução por média (estragaria o mapa UV no modo NEAREST).
+    img.thumbnail((max_side - 8, max_side - 8), resample,
+                  reducing_gap=None if resample == Image.NEAREST else 2.0)
+    canvas = Image.new(img.mode, (img.width + 8, img.height + 8), (0, 0, 0, 0) if img.mode == "RGBA" else (0, 0, 0))
     canvas.paste(img, (4, 4))
     return canvas
 
@@ -164,17 +243,23 @@ def main() -> None:
     parser.add_argument("--menu-size", type=int, default=260)
     parser.add_argument("--models", nargs="*", default=MODEL_KEYS, help="só estes modelos (padrão: todos)")
     parser.add_argument("--pilots", nargs="*", default=PILOTS, help="só estes pilotos (padrão: todos)")
+    parser.add_argument("--passes", nargs="*", default=["sprites", "paint", "uv"],
+                        choices=["sprites", "paint", "uv"],
+                        help="o que gravar: sprites originais, camadas de pintura, mapas UV (padrão: tudo)")
+    parser.add_argument("--pattern-size", type=int, default=256)
     args = parser.parse_args()
 
     three_js = args.three.read_bytes()
     jszip_js = args.jszip.read_bytes()
     folders = {
-        "back": (args.out / "plane_sprites", args.out / "plane_paint", args.game_size),
-        "menu": (args.out / "plane_menu", args.out / "plane_menu_paint", args.menu_size),
+        "back": (args.out / "plane_sprites", args.out / "plane_paint", args.out / "plane_uv", args.game_size),
+        "menu": (args.out / "plane_menu", args.out / "plane_menu_paint", args.out / "plane_menu_uv", args.menu_size),
     }
-    for sprite_dir, paint_dir, _ in folders.values():
-        sprite_dir.mkdir(parents=True, exist_ok=True)
-        paint_dir.mkdir(parents=True, exist_ok=True)
+    for sprite_dir, paint_dir, uv_dir, _ in folders.values():
+        for folder in (sprite_dir, paint_dir, uv_dir):
+            folder.mkdir(parents=True, exist_ok=True)
+    pattern_dir = args.out / "plane_patterns"
+    pattern_dir.mkdir(parents=True, exist_ok=True)
 
     with sync_playwright() as pw:
         browser = pw.chromium.launch(args=["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"])
@@ -202,15 +287,30 @@ def main() -> None:
             return [k, txt.find(t => /^\\d+\\./.test(t)) || txt[0] || k];
         }))""")
 
+        if "uv" in args.passes:
+            for name, scheme, hex1, hex2 in PATTERNS:
+                data = page.evaluate(PATTERN_JS, {"scheme": scheme, "hex": hex1, "secondaryHex": hex2,
+                                                  "size": args.pattern_size})
+                decode(data).convert("RGB").save(pattern_dir / f"{name}.png", optimize=True)
+            print(f"  {len(PATTERNS)} padrões de pintura", flush=True)
+
+        js_passes = [p for p in args.passes if p in ("paint", "uv")]
         for pilot in args.pilots:
             for key in args.models:
-                for view, (sprite_dir, paint_dir, size) in folders.items():
-                    shots = page.evaluate(RENDER_JS, {"key": key, "pilot": pilot, "view": view, "size": 640})
+                for view, (sprite_dir, paint_dir, uv_dir, size) in folders.items():
+                    shots = page.evaluate(RENDER_JS, {"key": key, "pilot": pilot, "view": view,
+                                                      "size": 640, "passes": js_passes})
                     original = decode(shots["original"])
                     bbox = original.getchannel("A").point(lambda a: 255 if a > 8 else 0).getbbox()
-                    fit(original, bbox, size).save(sprite_dir / f"{key}__{pilot}.png", optimize=True)
-                    paint = paint_layer(decode(shots["white"]), decode(shots["mask"]))
-                    fit(paint, bbox, size).save(paint_dir / f"{key}__{pilot}.png", optimize=True)
+                    name = f"{key}__{pilot}.png"
+                    if "sprites" in args.passes:
+                        fit(original, bbox, size).save(sprite_dir / name, optimize=True)
+                    if "paint" in args.passes:
+                        paint = paint_layer(decode(shots["white"]), decode(shots["mask"]))
+                        fit(paint, bbox, size).save(paint_dir / name, optimize=True)
+                    if "uv" in args.passes:
+                        uv = decode(shots["uv"]).convert("RGB")
+                        fit(uv, bbox, size, Image.NEAREST).save(uv_dir / name, optimize=True)
             print(f"  piloto {pilot}: {len(args.models)} aviões", flush=True)
         browser.close()
 
