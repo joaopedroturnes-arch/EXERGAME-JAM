@@ -663,8 +663,8 @@ def test_run_novo_reinicia_ordem_de_lixo_no_primeiro_modelo(isolated_data_dir):
     game = Game()
     game.start_run()
     sprites = [e.sprite for e in game.entities if e.kind == "trash"]
-    assert len(sprites) >= 10
-    assert sprites[:10] == TRASH_MODELS
+    assert len(sprites) >= len(TRASH_MODELS)
+    assert sprites[:len(TRASH_MODELS)] == TRASH_MODELS
 
 
 @pytest.mark.parametrize("kind", OBSTACLE_KINDS)
@@ -699,6 +699,123 @@ def test_visual_stage_pair_interpola_entre_eras(game):
     assert t == pytest.approx(0.5)
 
 
+def test_cenario_acompanha_a_restauracao_aos_poucos(game):
+    game.restoration = 40.0
+    game.increase_restoration(2.1)
+    assert game.restoration == pytest.approx(42.1)
+    assert game.visual_restoration == pytest.approx(40.0)          # sem degrau no quadro da coleta
+    game.ease_visual_restoration(eco_runner.VISUAL_RESTORATION_TIME)
+    assert 40.0 < game.visual_restoration < 42.1
+    for _ in range(400):
+        game.ease_visual_restoration(0.05)
+    assert game.visual_restoration == pytest.approx(42.1)
+
+
+def test_cenario_avanca_durante_o_voo(game):
+    start_flight(game)
+    game.restoration = 49.0
+    game.increase_restoration(3.0)
+    game.cheat_invincible = True
+    advance(game, 0.1)
+    first = game.visual_restoration
+    assert 49.0 < first < 52.0                                      # andou, mas não saltou
+    advance(game, 0.5)
+    assert first < game.visual_restoration <= game.restoration
+
+
+def test_parcela_de_trechos_restaurados_sobe_de_50_a_80(game):
+    start = eco_runner.GRASS_START_RESTORATION
+    sweep = eco_runner.GREEN_SWEEP_RESTORATION
+    assert sweep == 30.0                                            # 2x mais lenta que antes (15)
+    shares = []
+    for i in range(31):
+        game.restoration = start + sweep * i / 30
+        shares.append(game.green_share())
+    assert shares[0] == 0.0 and shares[-1] == 1.0 and shares == sorted(shares)
+    game.restoration = start - 0.01
+    assert game.green_share() == 0.0
+    ranks = [game.green_rank(s) for s in range(200)]
+    assert abs(sum(r < 0.5 for r in ranks) - 100) <= 5              # espalhado, sem aglomerar
+
+
+def test_verde_chega_do_horizonte_e_nao_aparece_perto_do_aviao(game):
+    start_flight(game)
+    game.restoration = 49.0                                         # ainda sem verde
+    assert game.green_since == {}
+    game.visual_restoration = 80.0                                  # todos os trechos novos vêm verdes
+    game.update_green_segments()
+    convertidos = [i for i in range(len(game.segments)) if game.segment_base + i in game.green_since]
+    assert convertidos
+    assert all(game.segments[i] >= 1800.0 for i in convertidos)    # só lá longe, na neblina
+    assert all(game.segment_green(game.segment_base + i) == 0.0 for i in convertidos)  # ainda brotando
+    seg = game.segment_base + convertidos[0]
+    z_seg = game.segments[convertidos[0]]
+    assert not game.ground_is_green(z_seg + 50.0)                   # chão e árvore começam juntos
+    game.distance_travelled += 1.0
+    assert game.ground_is_green(z_seg + 50.0) and 0.0 < game.segment_green(seg) < 0.04
+    game.distance_travelled += eco_runner.GREEN_GROW_DISTANCE / 2 - 1.0   # o trecho veio chegando
+    assert game.segment_green(seg) == pytest.approx(0.5)
+    game.distance_travelled += eco_runner.GREEN_GROW_DISTANCE
+    assert game.segment_green(seg) == 1.0
+
+
+def test_atribuicao_direta_ja_deixa_os_trechos_no_estado_final(game):
+    start_flight(game)
+    game.restoration = 95.0
+    segs = [game.segment_base + i for i in range(len(game.segments))]
+    assert all(game.segment_green(s) == 1.0 for s in segs)
+    game.restoration = 5.0
+    assert game.green_since == {}
+
+
+def test_trechos_que_ja_passaram_saem_da_memoria(game):
+    start_flight(game)
+    game.restoration = 95.0
+    game.cheat_invincible = True
+    advance(game, 3.0)
+    assert min(game.green_since) >= game.segment_base
+    assert len(game.green_since) <= len(game.segments)
+
+
+def test_silhuetas_continuam_transparentes_depois_do_fade(game):
+    start_flight(game)
+    while game.warm_up_queue is not None:
+        game.step_warm_up(50)
+    game.draw()
+    state = game.skyline_state["front"]
+    layer = state["surface"]
+    state["previous"], state["fade_start"] = layer.copy(), eco_runner.time.perf_counter()
+    game.draw_skyline((0, 0, 0))                                   # desenha no meio do fade
+    x, y = next((x, y) for y in range(0, layer.get_height(), 3) for x in range(0, layer.get_width(), 7)
+                if layer.get_at((x, y)).a == 0)
+    alvo = pygame.Surface(layer.get_size())
+    alvo.fill((0, 0, 255))
+    alvo.blit(layer, (0, 0))
+    assert tuple(alvo.get_at((x, y)))[:3] == (0, 0, 255)           # fundo transparente, não um bloco
+
+
+def test_pista_purifica_com_gradiente(game):
+    w, band = 900.0, eco_runner.ROAD_PURIFY_BAND
+    assert game.purify_amount(w + 1.0, w) == 0.0
+    assert game.purify_amount(w - band, w) == 1.0
+    assert 0.0 < game.purify_amount(w - band / 2, w) < 1.0
+
+
+def test_margens_trocam_aos_poucos_no_trecho_restaurado(game, monkeypatch):
+    start_flight(game)
+    calls = []
+    monkeypatch.setattr(game, "draw_industrial", lambda *a, **k: calls.append(("ind", k["scale_h"])))
+    monkeypatch.setattr(game, "draw_tree", lambda *a, **k: calls.append(("tree", k["grow"])))
+    seg = game.segment_base + 4
+    game.green_since[seg] = game.distance_travelled - eco_runner.GREEN_GROW_DISTANCE / 2
+    game.draw_margins(seg, 900.0)                                   # no meio do crescimento
+    assert {kind for kind, _ in calls} == {"ind", "tree"}
+    assert all(0.0 < v < 1.0 for _, v in calls)
+    calls.clear()
+    game.draw_margins(seg + 1, 1000.0)                              # trecho não restaurado: só indústria
+    assert calls and all(kind == "ind" and v == 1.0 for kind, v in calls)
+
+
 # ----------------------------------------------------------------- sprites
 def test_sprites_presentes_sao_carregados_de_assets(game):
     assert eco_runner.find_asset_dir("plane_sprites").resolve() == (PROJECT_DIR / "assets" / "plane_sprites").resolve()
@@ -706,7 +823,7 @@ def test_sprites_presentes_sao_carregados_de_assets(game):
     assert len(game.plane_menu_sprites) == 77
     assert set(game.plane_sprites) == {f"{m}__{p}" for m, _ in PLANE_MODELS for p, _ in PILOTS}
     assert len(game.tree_sprites) == 10
-    assert len(game.trash_sprites) == 10
+    assert len(game.trash_sprites) == len(TRASH_MODELS) == 4   # coletáveis novos (prévia aplicada)
     assert len(game.side_prop_sprites) == 8
     assert len(game.powerup_sprites) == 3
     # Camadas de pintura: uma por combinação, do mesmo tamanho do sprite original.
@@ -829,7 +946,7 @@ def test_trecho_da_pista_mantem_cor_e_cenario_ao_ser_reciclado(game):
 
 
 def test_modelos_do_kit_dieselpunk_scenario_sao_carregados(game):
-    assert len(game.scenario_sprites) == len(eco_runner.SCENARIO_SPRITES) == 28
+    assert len(game.scenario_sprites) == len(eco_runner.SCENARIO_SPRITES) == 31   # 28 do kit + 3 da prévia
     assert len(game.skyline_sprites) == len(eco_runner.SKYLINE_SPRITES)
     assert game.sky_panorama is not None
     assert len(game.clouds) > 0
@@ -878,34 +995,43 @@ def test_chao_de_concreto_na_fase_inicial_e_grama_onde_as_arvores_aparecem(game)
 
     game.restoration = 5.0                                         # fase inicial: só concreto
     game.screen.fill(blue)
-    game.draw_ground(1000.0)
+    game.draw_ground()
     assert all(is_concrete(game.screen.get_at((x, row))) for x in (5, 150, WIDTH - 150, WIDTH - 5))
     assert game.screen.get_at((WIDTH // 2, row)) == blue           # o meio fica para a pista
     before = [tuple(game.screen.get_at((x, row))) for x in sides]
     game.distance_travelled += eco_runner.CONCRETE_TILE_Z * 0.37   # a pista andou: o chão desliza
-    game.draw_ground(1000.0)
+    game.draw_ground()
     assert before != [tuple(game.screen.get_at((x, row))) for x in sides]
 
-    game.restoration = 60.0                                        # árvores: grama até a frente
-    wave_z = 180.0 + (game.restoration / 100.0) ** 1.15 * 2150.0
-    y_start = int(eco_runner.HORIZON_Y + eco_runner.CAMERA_HEIGHT * eco_runner.FOV / wave_z)
+    # Só o trecho da linha 300 restaurado: grama nele, concreto no trecho mais longe.
+    def row_z(y):
+        return eco_runner.CAMERA_HEIGHT * eco_runner.FOV / (y + 0.5 - eco_runner.HORIZON_Y)
+    seg_index = int((row_z(row) - game.segments[0]) // 100.0)
+    game.green_since[game.segment_base + seg_index] = -1e12
+    far_row = next(y for y in range(row - 1, eco_runner.HORIZON_Y, -1)
+                   if int((row_z(y) - game.segments[0]) // 100.0) == seg_index + 2)
     game.screen.fill(blue)
-    game.draw_ground(wave_z)
-    assert is_concrete(game.screen.get_at((5, y_start - 4)))       # além da frente: concreto
-    grass = game.screen.get_at((5, y_start + 40))
-    assert grass.g > grass.b and grass.g > grass.r                 # aquém: grama
+    game.draw_ground()
+    grass = game.screen.get_at((5, row))
+    assert grass.g > grass.b and grass.g > grass.r                 # trecho restaurado: grama
+    assert is_concrete(game.screen.get_at((5, far_row)))           # trecho não restaurado: concreto
+
+    game.restoration = 95.0                                        # todos os trechos restaurados
+    game.screen.fill(blue)
+    game.draw_ground()
+    grass = game.screen.get_at((5, row))
+    assert grass.g > grass.b and grass.g > grass.r
 
 
 def test_sem_textura_de_grama_o_concreto_nao_cobre_a_area_restaurada(game, monkeypatch):
     start_flight(game)
     game.ground_textures.pop("grass")
     game.grass_texture = None
-    game.restoration = 60.0
+    game.restoration = 95.0
     game.draw()                                                    # não pode falhar
-    wave_z = 180.0 + (game.restoration / 100.0) ** 1.15 * 2150.0
     blue = pygame.Color(0, 0, 255, 255)
     game.screen.fill(blue)
-    game.draw_ground(wave_z)
+    game.draw_ground()
     assert game.screen.get_at((5, 300)) == blue                    # fica a grama de reserva do polígono
 
 
@@ -1006,7 +1132,10 @@ def test_oficina_linha_de_padroes_previa_cancelar_e_salvar(isolated_data_dir):
     game.handle_key(pygame.K_s)
     game.handle_key(pygame.K_LEFT)                        # dá a volta: último padrão
     assert game.plane_pattern_key == keys[-1]
-    game.handle_key(pygame.K_RETURN)
+    game.wallet = 10_000                                  # loja: o padrão precisa ser comprado
+    game.handle_key(pygame.K_RETURN)                      # 1ª confirmação: compra
+    assert game.state == "paint" and keys[-1] in game.owned_patterns
+    game.handle_key(pygame.K_RETURN)                      # 2ª: salva a pintura
     config = json.loads((eco_runner.user_data_dir() / CONFIG_FILENAME).read_text(encoding="utf-8"))
     assert config["padroes"] == {game.plane_key: keys[-1]}
     assert Game().plane_pattern_key == keys[-1]           # reabrir o jogo mantém o padrão
@@ -1017,6 +1146,82 @@ def test_oficina_linha_de_padroes_previa_cancelar_e_salvar(isolated_data_dir):
     game.handle_key(pygame.K_RIGHT)                       # escolher uma cor volta ao liso
     assert game.plane_pattern_key == "liso"
     assert game.plane_color_key == eco_runner.PLANE_COLOR_KEYS[1]
+
+
+def collect_some(game, n):
+    total = 0
+    for _ in range(n):
+        before = game.trash_cleaned
+        game.collect_trash(Entity(PLAYER_Z, 0, "trash", 60.0, TRASH_MODELS[0]))
+        total += game.trash_cleaned - before
+    return total
+
+
+def test_pontos_acumulam_entre_partidas_e_ficam_salvos(isolated_data_dir):
+    game = Game()
+    assert game.wallet == 0
+    start_flight(game)
+    first = collect_some(game, 5)
+    assert game.wallet == first > 0
+    game.start_run()                                      # partida nova: o placar zera, a carteira não
+    assert game.trash_cleaned == 0 and game.wallet == first
+    second = collect_some(game, 3)
+    assert game.wallet == first + second
+    game.save_high_score()
+    assert Game().wallet == first + second                # reabrir o jogo mantém a carteira
+    data = json.loads(eco_runner.save_file_path().read_text(encoding="utf-8"))
+    assert data["pontos"] == first + second and data["recorde"] >= first
+
+
+def test_loja_compra_padrao_com_pontos_e_desconta(isolated_data_dir):
+    game = Game()
+    keys = eco_runner.PLANE_PATTERN_KEYS
+    price = eco_runner.PATTERN_PRICES["camuflado"]
+    game.handle_key(pygame.K_c)
+    game.handle_key(pygame.K_DOWN)
+    game.set_pattern_index(keys.index("camuflado"))
+    assert game.plane_pattern_key == "camuflado"          # prévia mesmo bloqueado
+    game.wallet = price - 1
+    game.handle_key(pygame.K_RETURN)                      # sem pontos: não compra nem sai
+    assert game.state == "paint" and "camuflado" not in game.owned_patterns
+    assert game.wallet == price - 1 and "Faltam 1 pontos" in game.shop_message
+    game.draw()
+    game.wallet = price + 50
+    game.handle_key(pygame.K_RETURN)                      # compra
+    assert "camuflado" in game.owned_patterns and game.wallet == 50 and game.state == "paint"
+    game.handle_key(pygame.K_RETURN)                      # salva e volta ao hangar
+    assert game.state == "menu" and game.plane_pattern_key == "camuflado"
+    reopened = Game()
+    assert "camuflado" in reopened.owned_patterns and reopened.wallet == 50
+    assert reopened.plane_pattern_key == "camuflado"
+
+
+def test_padrao_nao_comprado_so_aparece_como_previa(isolated_data_dir):
+    game = Game()
+    game.handle_key(pygame.K_c)
+    game.handle_key(pygame.K_DOWN)
+    game.set_pattern_index(eco_runner.PLANE_PATTERN_KEYS.index("galaxia"))
+    assert game.plane_pattern_key == "galaxia"
+    game.handle_key(pygame.K_ESCAPE)
+    assert game.state == "menu" and game.plane_pattern_key == "liso"
+    game.plane_patterns[game.plane_key] = "galaxia"       # mesmo gravado, fora da oficina não vale
+    assert game.plane_pattern_key == "liso"
+
+
+def test_quem_ja_usava_um_padrao_antes_da_loja_fica_com_ele(isolated_data_dir):
+    folder = eco_runner.user_data_dir()
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / CONFIG_FILENAME).write_text(json.dumps({"aviao": "dart", "piloto": "zen",
+                                                      "padroes": {"dart": "tigre"}}), encoding="utf-8")
+    eco_runner.save_file_path().write_text(json.dumps({"recorde": 500}), encoding="utf-8")
+    game = Game()
+    assert "tigre" in game.owned_patterns and game.plane_pattern_key == "tigre"
+    assert game.wallet == 0 and game.high_score == 500
+
+
+def test_todos_os_padroes_menos_o_liso_tem_preco():
+    assert set(eco_runner.PATTERN_PRICES) == set(eco_runner.PLANE_PATTERN_KEYS) - {"liso"}
+    assert all(price > 0 for price in eco_runner.PATTERN_PRICES.values())
 
 
 def test_config_com_padrao_invalido_e_ignorado(isolated_data_dir):
@@ -1036,6 +1241,7 @@ def test_padrao_veste_so_o_papel_e_mantem_o_piloto(game):
     combo = game.plane_combo
     base = game.plane_sprites[combo]
     paint = game.plane_paint[combo]
+    game.owned_patterns.add("xadrez")                     # comprado na loja
     game.plane_patterns[game.plane_key] = "xadrez"
     painted = game.plane_surface()
     assert painted.get_size() == base.get_size()
@@ -1063,6 +1269,7 @@ def test_padrao_sem_mapa_uv_usa_a_cor(game):
     game.pilot_index = 1
     combo = game.plane_combo
     game.plane_uv.pop(combo)
+    game.owned_patterns.add("galaxia")                    # comprado na loja
     game.plane_patterns[game.plane_key] = "galaxia"
     assert game.plane_surface() is game.plane_sprites[combo]       # sem cor: original
     game.plane_colors[game.plane_key] = "vermelho"

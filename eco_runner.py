@@ -194,6 +194,19 @@ def _read_record(path: Path) -> int:
         return 0
 
 
+def _read_progress(path: Path) -> Tuple[int, Optional[set]]:
+    """Carteira de pontos e padrões comprados (None = arquivo de antes da loja)."""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        wallet = max(0, int(data.get("pontos", 0)))
+        bought = data.get("padroes_comprados")
+        if bought is None:
+            return wallet, None
+        return wallet, {k for k in bought if k in PATTERN_PRICES}
+    except (OSError, ValueError, TypeError, AttributeError):
+        return 0, None
+
+
 def show_message(title: str, text: str) -> None:
     """Mostra uma mensagem simples ao usuário (sem traceback)."""
     if sys.platform.startswith("win"):
@@ -468,6 +481,22 @@ CAMERA_HEIGHT = 155.0          # altura da câmera usada em project()
 GRASS_TILE_X = 240.0           # largura (mundo) que uma repetição da textura de grama cobre
 GRASS_TILE_Z = 120.0           # profundidade (mundo) de uma repetição da textura de grama
 GRASS_START_RESTORATION = 50.0 # mesma restauração em que as árvores passam a aparecer
+# Transição de cenário: o desenho segue a restauração aos poucos, sem degrau a cada lixo
+# coletado (constante de tempo, em segundos). A jogabilidade usa o valor real.
+VISUAL_RESTORATION_TIME = 2.8
+# Era verde (grama e árvores) chega DO HORIZONTE PARA O AVIÃO: a partir de
+# GRASS_START_RESTORATION, os trechos que entram lá longe (além de GREEN_CONVERT_Z, na
+# neblina) passam a vir restaurados. A parcela de trechos restaurados sobe de 0 a 100% ao
+# longo destes pontos de restauração; os trechos já próximos seguem como estão até passar.
+GREEN_SWEEP_RESTORATION = 30.0
+GREEN_CONVERT_Z = 1800.0
+# Num trecho restaurado, a peça industrial afunda no chão e a árvore cresce enquanto o
+# trecho percorre esta distância em direção ao avião (cerca de 2 s).
+GREEN_GROW_DISTANCE = 1000.0
+# A pista passa da cor suja para a purificada ao longo desta profundidade (antes: troca seca por trecho).
+ROAD_PURIFY_BAND = 300.0
+# Silhuetas do horizonte: a fileira nova aparece por cima da antiga em vez de trocar num quadro.
+SKYLINE_FADE_S = 0.6
 GRASS_FALLBACK = ((74, 140, 52), (64, 128, 46))  # cores lisas se a textura faltar
 # Concreto sujo no chão das áreas ainda não restauradas (toda a fase inicial).
 CONCRETE_TILE_X = 400.0        # largura (mundo) de uma repetição da textura de concreto
@@ -511,6 +540,11 @@ def lerp(a: float, b: float, t: float) -> float:
 def lerp_color(a: Color, b: Color, t: float) -> Color:
     t = clamp(t, 0.0, 1.0)
     return tuple(round(lerp(a[i], b[i], t)) for i in range(3))  # type: ignore
+
+def smoothstep(t: float) -> float:
+    """0..1 com início e fim suaves (derivada zero nas pontas)."""
+    t = clamp(t, 0.0, 1.0)
+    return t * t * (3.0 - 2.0 * t)
 
 def rgb(hex_color: str) -> Color:
     hex_color = hex_color.lstrip("#")
@@ -562,6 +596,15 @@ SOLARPUNK_TREE_SPECS: List[Tuple[str, float]] = [
     ("10_arvore_cristalina", 310.0),
 ]
 
+# Era verde: na fileira de fundo, 1 trecho a cada RESTAURADOS_A_CADA mostra um prédio restaurado
+# (no lugar de uma árvore). Ordem fixa: alterna os dois, de lado a lado.
+RESTAURADOS_A_CADA = 6
+RESTAURADOS_RESTO = 3
+RESTAURADOS_SPECS: List[Tuple[str, float]] = [
+    ("SCN_Galpao_Restaurado", 160.0),
+    ("SCN_TorreChamine_Restaurada", 310.0),
+]
+
 # Kit Dieselpunk_Scenario (modelos_3d/Dieselpunk_Scenario), renderizado em
 # assets/scenario_sprites. Todas as listas abaixo seguem ordem fixa, sem sorteio.
 SCENARIO_SPRITES = [
@@ -571,7 +614,8 @@ SCENARIO_SPRITES = [
     "steam_pipe_straight", "steam_pipe_tee", "valve_manifold", "cargo_elevator",
     "fixed_crane", "industrial_stairs", "metal_walkway", "amber_light", "cable_reel",
     "control_panel", "fuel_barrel", "rusted_crate", "hangar_door_a", "metal_support",
-    "industrial_tower_a",
+    "industrial_tower_a", "SCN_CaixaIndustrial_Cenario", "SCN_Galpao_Restaurado",
+    "SCN_TorreChamine_Restaurada",
 ]
 
 # Fileira junto à pista (eras I e II): peças pequenas do kit.
@@ -579,19 +623,19 @@ MARGIN_PROP_SPECS: List[Tuple[str, float]] = [
     ("fuel_barrel", 62.0), ("valve_manifold", 88.0), ("rusted_crate", 52.0),
     ("cable_reel", 78.0), ("steam_pipe_straight", 58.0), ("control_panel", 92.0),
     ("diesel_generator", 82.0), ("amber_light", 48.0), ("steam_pipe_tee", 74.0),
-    ("boiler_compressor", 96.0), ("steam_pipe_corner", 76.0), ("metal_walkway", 56.0),
+    ("boiler_compressor", 96.0), ("steam_pipe_corner", 70.0), ("metal_walkway", 56.0),
 ]
 
 # Fileira de fundo das margens (eras I e II): estruturas do kit intercaladas
 # com os 8 props Dieselpunk originais.
 MID_ROW_SPECS: List[Tuple[str, float]] = [
-    ("industrial_tower_a", 400.0), ("fabrica", 250.0), ("pressure_tank", 200.0),
+    ("industrial_tower_a", 400.0), ("fabrica", 186.0), ("pressure_tank", 200.0),
     ("factory_wall_a", 190.0), ("chamine", 310.0), ("fixed_crane", 360.0),
     ("cargo_elevator", 200.0), ("caldeira", 190.0), ("industrial_chimney", 320.0),
     ("factory_wall_b", 190.0), ("tubos_valvula", 190.0), ("industrial_fan", 120.0),
-    ("background_silo", 420.0), ("tambores", 165.0), ("metal_support", 180.0),
+    ("background_silo", 420.0), ("tambores", 119.0), ("metal_support", 180.0),
     ("lixo", 125.0), ("industrial_stairs", 200.0), ("sucata", 145.0),
-    ("hangar_door_a", 240.0), ("cacamba", 155.0), ("power_pylon", 430.0),
+    ("hangar_door_a", 240.0), ("SCN_CaixaIndustrial_Cenario", 155.0), ("power_pylon", 430.0),
     ("distant_factory", 260.0),
 ]
 
@@ -613,9 +657,7 @@ POLLUTED_HAZE: Tuple[int, int, int] = (92, 54, 26)
 
 # Lixo coletável (modelos de sucata de modelos_3d), em ordem fixa de aparição.
 TRASH_MODELS = [
-    "rusty_can", "chemical_battery", "radio_transceiver", "junkyard_mask",
-    "shattered_spotlight", "turbine_debris", "broken_pipe", "scrap_heap",
-    "piston_pump", "debris_plate",
+    "COL_Lixo_Cubo", "COL_Lixo_Lata", "COL_Lixo_Piramide", "COL_Semente",
 ]
 
 # Obstáculos (props Dieselpunk). Cada tipo pede uma manobra diferente.
@@ -703,8 +745,24 @@ PLANE_PATTERNS: List[Tuple[str, str]] = [
     ("hexagonal", "Fibra hexagonal"), ("prisma", "Prisma (dazzle)"), ("xadrez", "Xadrez de corrida"),
     ("listras", "Listras de corrida"), ("raios", "Raios solares"), ("pop_art", "Pop art (retícula)"),
     ("brasil", "Brasil"),
+    # Texturas de papel (pacote "texturas_aviao_papel"): mais caras, na faixa de 2.500 a 6.000.
+    ("kraft", "Kraft pardo"), ("papel_reciclado", "Papel reciclado"), ("eco_folhas", "Folhas ecológicas"),
+    ("caderno_pautado", "Caderno pautado"), ("jornal", "Jornal"), ("bolinhas", "Bolinhas"),
+    ("listras_papel", "Listras de papel"), ("origami_seigaiha", "Origami seigaiha"), ("blueprint", "Planta técnica"),
+    ("aquarela", "Aquarela"),
 ]
 PLANE_PATTERN_KEYS = [key for key, _ in PLANE_PATTERNS]
+# Loja da oficina: os padrões (menos o liso) são comprados com os pontos acumulados
+# de todas as partidas. Comprar desconta da carteira; o recorde não muda.
+PATTERN_PRICES = {
+    "camuflado": 300, "deserto": 300, "artico": 300, "listras": 500, "xadrez": 500,
+    "hexagonal": 700, "tigre": 700, "chamas": 900, "raios": 900, "pop_art": 1100,
+    "prisma": 1100, "brasil": 1300, "cyberpunk": 1600, "plasma": 1800, "galaxia": 2200,
+    "kraft": 2500, "papel_reciclado": 2800, "eco_folhas": 3000, "caderno_pautado": 3000,
+    "jornal": 3500, "bolinhas": 3500, "listras_papel": 3800, "origami_seigaiha": 5000,
+    "blueprint": 5500, "aquarela": 6000,
+}
+SHOP_MESSAGE_TIME = 2.6        # segundos que o aviso de compra fica na tela
 PATTERN_TEXTURE_SIZE = 256
 PATTERN_CACHE_LIMIT = 4        # paletas de padrão prontas na memória (~2,7 MB cada)
 
@@ -879,6 +937,13 @@ class Game:
         self.plane_index, self.pilot_index = self.load_selection()
         self.plane_colors = self.load_plane_colors()
         self.plane_patterns = self.load_plane_patterns()
+        self.wallet, bought = _read_progress(save_file_path())
+        self.owned_patterns = {"liso"} | (bought or set())
+        self.shop_message = ""
+        self.shop_message_timer = 0.0
+        if bought is None:
+            # Primeira vez com a loja: quem já usava um padrão fica com ele.
+            self.owned_patterns |= {k for k in self.plane_patterns.values() if k in PATTERN_PRICES}
         self.control_mode = self.load_control_mode()
         self.webcam: Optional[WebcamControl] = None     # criado ao usar a câmera
         self.analog = (0.0, 0.0)                        # eixos da câmera: (direita, subir), -1..1
@@ -1045,7 +1110,7 @@ class Game:
 
     def update_atmosphere(self, horizon: Color) -> None:
         """Poluição do céu e cor da neblina conforme a restauração."""
-        self.pollution = clamp(1.0 - (self.restoration - POLLUTION_CLEAR_START)
+        self.pollution = clamp(1.0 - (self.visual_restoration - POLLUTION_CLEAR_START)
                                / (POLLUTION_CLEAR_END - POLLUTION_CLEAR_START), 0.0, 1.0)
         fog = lerp_color(horizon, POLLUTED_HAZE, self.pollution * 0.8)
         self.fog_color = tuple(int(c) for c in fog)  # type: ignore[assignment]
@@ -1192,8 +1257,14 @@ class Game:
             if job is None:
                 continue
             first_time = state["target"] is None      # primeira vez: monta tudo já
+            fading = (state.get("previous") is not None
+                      and time.perf_counter() - state.get("fade_start", 0.0) < SKYLINE_FADE_S)
+            if fading and not first_time:
+                continue                              # termina a transição atual antes da próxima
             while first_time or (time.perf_counter() - start) * 1000.0 < budget_ms:
                 if next(job["steps"], StopIteration) is StopIteration:
+                    if not first_time and state["surface"] is not None:
+                        state["previous"], state["fade_start"] = state["surface"], time.perf_counter()
                     state["surface"], state["target"], state["job"] = job["surface"], job["target"], None
                     break
 
@@ -1204,11 +1275,29 @@ class Game:
         shift = self.cam_x * FAR_SHIFT_PX
         drew = False
         for name, ratio, extra in (("back", FAR_BACK_RATIO, 700), ("front", 1.0, 0)):
-            layer = self.skyline_state.get(name, {}).get("surface")
-            if layer is None:
+            state = self.skyline_state.get(name, {})
+            layer = state.get("surface")
+            previous = state.get("previous")
+            if layer is None and previous is None:
                 continue
             drew = True
-            self.blit_tiled(layer, (shift + drift) * ratio + extra, HORIZON_Y - SKYLINE_HEIGHT + 2)
+            offset, top = (shift + drift) * ratio + extra, HORIZON_Y - SKYLINE_HEIGHT + 2
+            fade = 1.0
+            if previous is not None:
+                fade = (time.perf_counter() - state.get("fade_start", 0.0)) / SKYLINE_FADE_S
+                if fade >= 1.0:
+                    state["previous"] = None
+                    fade = 1.0
+                elif layer is None:                    # fileira esvaziou: a antiga some aos poucos
+                    previous.set_alpha(int(255 * (1.0 - fade)))
+                    self.blit_tiled(previous, offset, top)
+                    previous.set_alpha(255)
+                else:
+                    self.blit_tiled(previous, offset, top)
+            if layer is not None:
+                layer.set_alpha(int(255 * clamp(fade, 0.0, 1.0)))
+                self.blit_tiled(layer, offset, top)
+                layer.set_alpha(255)
         if not drew and self.skyline_base("back") is None and self.skyline_base("front") is None:
             self.draw_far_layer(horizon)
 
@@ -1281,30 +1370,24 @@ class Game:
             self.ground_fog_cache[key] = overlay
         return overlay, y_far
 
-    def grass_start_row(self, wave_z: float) -> int:
-        """Linha da tela onde a grama começa (HEIGHT = sem grama)."""
-        if self.restoration < GRASS_START_RESTORATION:
-            return HEIGHT
-        return int(HORIZON_Y + CAMERA_HEIGHT * FOV / wave_z)
-
-    def draw_ground(self, wave_z: float) -> None:
+    def draw_ground(self) -> None:
         """Chão fora da pista: concreto sujo onde não foi restaurado, grama onde já foi.
 
         Desenhado linha a linha da tela: cada linha copia a linha certa da
         textura, na escala da sua profundidade, deslocada pela distância
         percorrida (o chão vem na direção do avião) e pela câmera (paralaxe
-        igual à da pista). A grama começa na frente de restauração, onde as
-        árvores aparecem; antes dela (e em toda a fase inicial) é concreto.
+        igual à da pista). Cada trecho restaurado vira grama (ground_is_green);
+        os outros (e toda a fase inicial) são concreto.
         """
         if not self.ground_textures:
             return
-        y_grass = self.grass_start_row(wave_z)
+        flags = self.green_flags()               # uma vez por quadro, não por linha
         distance = self.distance_travelled
         cam = self.cam_x
         jobs = []
         append = jobs.append
         for y, z, group in self.ground_rows:
-            name = "grass" if y >= y_grass else "concrete"
+            name = "grass" if flags and self.ground_is_green(z, flags) else "concrete"
             info = self.ground_row_info(name, group)
             if info is None:
                 continue
@@ -1327,23 +1410,34 @@ class Game:
                     x += piece
                     src = 0
         self.screen.blits(jobs, doreturn=False)
-        if self.concrete_texture is not None and y_grass > HORIZON_Y:
-            near_z = wave_z if y_grass < HEIGHT else CAMERA_HEIGHT * FOV / (HEIGHT - HORIZON_Y)
-            self.draw_concrete_joints(near_z)
+        if self.concrete_texture is not None:
+            for near_z, far_z in self.concrete_spans():
+                self.draw_concrete_joints(near_z, far_z)
         overlay, y_far = self.ground_fog_overlay()
         self.screen.blit(overlay, (0, y_far))
-        if y_grass < HEIGHT:
-            # Borda da grama: linha escura que marca onde a restauração chegou.
-            haze = clamp((wave_z - FOG_START) / (FOG_END - FOG_START), 0.0, 1.0)
-            pygame.draw.line(self.screen, lerp_color((38, 84, 32), self.fog_color, haze),
-                             (0, y_grass), (WIDTH, y_grass), 2)
 
-    def draw_concrete_joints(self, near_z: float) -> None:
+    def concrete_spans(self) -> List[Tuple[float, float]]:
+        """Faixas de profundidade ainda de concreto (para as juntas das placas)."""
+        near = CAMERA_HEIGHT * FOV / (HEIGHT - HORIZON_Y)
+        if not self.green_since:
+            return [(near, FOG_END)]
+        spans: List[Tuple[float, float]] = []
+        for i, z in enumerate(self.segments):
+            if self.segment_green(self.segment_base + i) > 0.0:
+                continue
+            z0, z1 = max(z, near), min(z + 100.0, FOG_END)
+            if z1 <= z0:
+                continue
+            if spans and abs(spans[-1][1] - z0) < 1e-6:
+                spans[-1] = (spans[-1][0], z1)
+            else:
+                spans.append((z0, z1))
+        return spans
+
+    def draw_concrete_joints(self, near_z: float, far_z: float = FOG_END) -> None:
         """Juntas das placas paralelas à pista, em perspectiva exata (linhas retas no chão)."""
-        if near_z >= FOG_START:
-            pieces = [near_z, FOG_END]
-        else:
-            pieces = [near_z] + [FOG_START + (FOG_END - FOG_START) * k / 4 for k in range(5)]
+        marks = [FOG_START + (FOG_END - FOG_START) * k / 4 for k in range(5)]
+        pieces = [near_z] + [m for m in marks if near_z < m < far_z] + [far_z]
         for x in CONCRETE_JOINTS_X:
             for side in (-1, 1):
                 for z0, z1 in zip(pieces, pieces[1:]):
@@ -1409,7 +1503,11 @@ class Game:
     @property
     def plane_pattern_key(self) -> str:
         key = self.plane_patterns.get(self.plane_key, "liso")
-        return key if key in PLANE_PATTERN_KEYS else "liso"
+        if key not in PLANE_PATTERN_KEYS:
+            return "liso"
+        if key not in self.owned_patterns and self.state != "paint":
+            return "liso"                        # não comprado: só aparece como prévia na oficina
+        return key
 
     @property
     def plane_look(self) -> str:
@@ -1552,6 +1650,82 @@ class Game:
         self.next_spawn_z = 520.0
         self.init_world()
 
+    @property
+    def restoration(self) -> float:
+        return self._restoration
+
+    @restoration.setter
+    def restoration(self, value: float) -> None:
+        """Atribuição direta (início de partida, testes) muda o cenário na hora."""
+        self._restoration = float(value)
+        self.visual_restoration = float(value)
+        self.snap_green_segments()
+
+    @staticmethod
+    def green_rank(seg: int) -> float:
+        """Ordem fixa (0..1) em que os trechos viram verdes; espalhada, sem aglomerar."""
+        return (seg * 0.6180339887498949) % 1.0
+
+    def green_share(self) -> float:
+        """Parcela dos trechos que chegam restaurados (0 antes de GRASS_START_RESTORATION)."""
+        value = self.visual_restoration
+        if value < GRASS_START_RESTORATION:
+            return 0.0
+        return smoothstep((value - GRASS_START_RESTORATION) / GREEN_SWEEP_RESTORATION)
+
+    def snap_green_segments(self) -> None:
+        """Atribuição direta: os trechos já ficam no estado final, sem animação."""
+        self.green_since: dict = {}
+        segments = getattr(self, "segments", None)
+        share = self.green_share()
+        if not segments or share <= 0.0:
+            return
+        base = getattr(self, "segment_base", 0)
+        for i in range(len(segments)):
+            if self.green_rank(base + i) < share:
+                self.green_since[base + i] = -1e12
+
+    def update_green_segments(self) -> None:
+        """Trechos que entram lá longe passam a vir restaurados (chegam do horizonte)."""
+        for seg in [s for s in self.green_since if s < self.segment_base]:
+            del self.green_since[seg]
+        share = self.green_share()
+        if share <= 0.0:
+            return
+        for i, z in enumerate(self.segments):
+            seg = self.segment_base + i
+            if z >= GREEN_CONVERT_Z and seg not in self.green_since and self.green_rank(seg) < share:
+                self.green_since[seg] = self.distance_travelled
+
+    def segment_green(self, seg: int) -> float:
+        """0 = indústria, 1 = árvore crescida; cresce enquanto o trecho vem chegando."""
+        since = self.green_since.get(seg)
+        if since is None:
+            return 0.0
+        return smoothstep((self.distance_travelled - since) / GREEN_GROW_DISTANCE)
+
+    def green_flags(self) -> Optional[List[bool]]:
+        """Por trecho: o chão já é grama (junto com o início do crescimento da árvore)."""
+        if not self.green_since or not self.segments:
+            return None
+        return [self.segment_green(self.segment_base + i) > 0.0 for i in range(len(self.segments))]
+
+    def ground_is_green(self, z: float, flags: Optional[List[bool]] = None) -> bool:
+        """Chão do trecho na profundidade z já virou grama."""
+        if flags is None:
+            flags = self.green_flags()
+        if not flags:
+            return False
+        i = int((z - self.segments[0]) // 100.0)
+        return 0 <= i < len(flags) and flags[i]
+
+    def ease_visual_restoration(self, dt: float) -> None:
+        """O cenário (cores, céu, frentes) alcança a restauração real aos poucos."""
+        k = 1.0 - math.exp(-dt / VISUAL_RESTORATION_TIME)
+        self.visual_restoration += (self._restoration - self.visual_restoration) * k
+        if abs(self._restoration - self.visual_restoration) < 0.01:
+            self.visual_restoration = self._restoration
+
     def current_stage(self) -> Stage:
         for stage in reversed(STAGES):
             if self.restoration >= stage.min_value:
@@ -1559,15 +1733,24 @@ class Game:
         return STAGES[0]
 
     def visual_stage_pair(self) -> Tuple[Stage, Stage, float]:
-        value = self.restoration
+        value = self.visual_restoration
         for i in range(len(STAGES) - 1):
             a, b = STAGES[i], STAGES[i + 1]
             if a.min_value <= value < b.min_value:
                 return a, b, (value - a.min_value) / (b.min_value - a.min_value)
         return STAGES[-1], STAGES[-1], 1.0
 
+    def restoration_wave_z(self) -> float:
+        """Frente da pista purificada (cresce com a restauração visual)."""
+        return 180.0 + (self.visual_restoration / 100.0) ** 1.15 * 2150.0
+
+    @staticmethod
+    def purify_amount(z: float, wave_z: float) -> float:
+        """0 = pista suja, 1 = purificada; transição suave aquém da frente da pista."""
+        return smoothstep((wave_z - z) / ROAD_PURIFY_BAND)
+
     def increase_restoration(self, amount: float) -> None:
-        self.restoration = clamp(self.restoration + amount, 0.0, 100.0)
+        self._restoration = clamp(self._restoration + amount, 0.0, 100.0)   # o cenário acompanha aos poucos
 
     def collect_trash(self, entity: Entity) -> None:
         if entity.collected:
@@ -1575,6 +1758,8 @@ class Game:
         entity.collected = True
         value = 15 * self.combo
         self.trash_cleaned += value
+        self.wallet += value                     # carteira da loja: soma todas as partidas
+        self.high_score_dirty = True
         self.increase_restoration(2.1 + (0.25 if self.combo >= 4 else 0.0))
         self.streak += 1
         self.combo_timer = 2.2
@@ -1603,7 +1788,9 @@ class Game:
         temp_path = save_path.with_suffix(".tmp")
         try:
             temp_path.write_text(
-                json.dumps({"recorde": self.high_score}, ensure_ascii=False, indent=2),
+                json.dumps({"recorde": self.high_score, "pontos": self.wallet,
+                            "padroes_comprados": sorted(self.owned_patterns - {"liso"})},
+                           ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
             temp_path.replace(save_path)
@@ -1972,6 +2159,29 @@ class Game:
         self.pattern_index = index % len(PLANE_PATTERNS)
         self.plane_patterns[self.plane_key] = PLANE_PATTERN_KEYS[self.pattern_index]
 
+    def pattern_locked(self, key: str) -> bool:
+        return key != "liso" and key not in self.owned_patterns
+
+    def show_shop_message(self, text: str) -> None:
+        self.shop_message = text
+        self.shop_message_timer = SHOP_MESSAGE_TIME
+
+    def buy_pattern(self, key: str) -> bool:
+        """Compra o padrão com a carteira. Devolve True se ficou liberado."""
+        if not self.pattern_locked(key):
+            return True
+        price = PATTERN_PRICES[key]
+        name = PLANE_PATTERNS[PLANE_PATTERN_KEYS.index(key)][1]
+        if self.wallet < price:
+            self.show_shop_message(f"Faltam {price - self.wallet:,} pontos para {name}".replace(",", "."))
+            return False
+        self.wallet -= price
+        self.owned_patterns.add(key)
+        self.high_score_dirty = True
+        self.save_high_score()
+        self.show_shop_message(f"Comprado: {name}! Confirme de novo para salvar a pintura.")
+        return True
+
     def handle_paint_key(self, key: int) -> None:
         step = 0
         if key in (pygame.K_LEFT, pygame.K_a):
@@ -1983,6 +2193,10 @@ class Game:
         elif key in (pygame.K_DOWN, pygame.K_s):
             self.paint_row = 1             # linha dos padrões
         elif key in (pygame.K_RETURN, pygame.K_SPACE, pygame.K_c):
+            chosen = self.plane_patterns.get(self.plane_key, "liso")
+            if self.pattern_locked(chosen):
+                self.buy_pattern(chosen)   # 1ª confirmação num padrão com cadeado = comprar
+                return
             self.save_selection()          # confirma: cor e padrão ficam salvos para este avião
             self.state = "menu"
         elif key in (pygame.K_ESCAPE, pygame.K_BACKSPACE):
@@ -2043,6 +2257,7 @@ class Game:
         self.poll_webcam()
         self.apply_webcam_menu()
         self.cheat_flash = max(0.0, self.cheat_flash - dt)
+        self.shop_message_timer = max(0.0, self.shop_message_timer - dt)
         if self.state != "playing" or self.game_over or self.paused:
             return
         dt = min(dt, MAX_DT)
@@ -2053,6 +2268,8 @@ class Game:
         self.invulnerable_timer = max(0.0, self.invulnerable_timer - dt)
         self.hit_flash_timer = max(0.0, self.hit_flash_timer - dt)
         self.update_maneuver(dt)
+        self.ease_visual_restoration(dt)
+        self.update_green_segments()
         difficulty = clamp(self.elapsed / 180.0, 0.0, 1.0)
         self.speed = (BASE_SPEED + self.restoration * RESTORATION_SPEED_GAIN
                       + difficulty * DIFFICULTY_SPEED_GAIN)
@@ -2134,21 +2351,31 @@ class Game:
             scaled = self.fogged_sprite(scaled, (key, size, flip), level)
         self.screen.blit(scaled, (left, top))
 
-    def draw_tree(self, seq: int, side: int, x: float, z: float, size: float, cam: float) -> None:
-        """Árvore Solarpunk nas margens: modelo da pasta ou desenho de reserva."""
-        if z < NEAR_CLIP_Z:
+    def draw_tree(self, seq: int, side: int, x: float, z: float, size: float, cam: float,
+                  grow: float = 1.0) -> None:
+        """Árvore Solarpunk nas margens: modelo da pasta ou desenho de reserva.
+
+        size distingue a fileira (1 = fundo, 0.45 = borda); grow < 1 = árvore ainda crescendo.
+        """
+        if z < NEAR_CLIP_Z or grow < 0.04:
             return
+        if size >= 1.0 and seq % RESTAURADOS_A_CADA == RESTAURADOS_RESTO:
+            nome, altura = RESTAURADOS_SPECS[(seq // RESTAURADOS_A_CADA + (side > 0)) % len(RESTAURADOS_SPECS)]
+            sprite = self.scenario_sprites.get(nome)
+            if sprite is not None:
+                self.blit_world_sprite(sprite, ("scenery", nome), side * x, 0, z, altura * grow, side > 0, cam=cam)
+                return
         if self.tree_sprites:
             offset = len(SOLARPUNK_TREE_SPECS) // 2 if side > 0 else 0
             name, height = SOLARPUNK_TREE_SPECS[(seq + offset) % len(SOLARPUNK_TREE_SPECS)]
             sprite = self.tree_sprites.get(name)
             if sprite is not None:
-                self.blit_world_sprite(sprite, ("tree", name), side * x, 0, z, height * size, side > 0, cam=cam)
+                self.blit_world_sprite(sprite, ("tree", name), side * x, 0, z, height * size * grow, side > 0, cam=cam)
                 return
         if self.fog_level(z) >= FOG_LEVELS:
             return
         x, y, scale = self.project(side * x, 0, z, cam)
-        scale *= size
+        scale *= size * grow
         trunk_w = max(3, int(26 * scale))
         trunk_h = max(6, int(200 * scale))
         x0, y0 = int(x), int(y)
@@ -2170,46 +2397,53 @@ class Game:
         return self.scenario_sprites.get(name) or self.side_prop_sprites.get(name)
 
     def draw_industrial(self, specs: List[Tuple[str, float]], seq: int, side: int, x: float,
-                        z: float, cam: float, fallback: bool) -> None:
-        """Peça industrial das margens, na ordem fixa da lista (sem sorteio)."""
-        if z < NEAR_CLIP_Z:
+                        z: float, cam: float, fallback: bool, scale_h: float = 1.0) -> None:
+        """Peça industrial das margens, na ordem fixa da lista (sem sorteio).
+
+        scale_h < 1: a peça está afundando no chão (transição para a era verde).
+        """
+        if z < NEAR_CLIP_Z or scale_h < 0.04:
             return
         offset = len(specs) // 2 if side > 0 else 0
         for step in range(len(specs)):
             name, height = specs[(seq + offset + step) % len(specs)]
             sprite = self.scenery_sprite(name)
             if sprite is not None:
-                self.blit_world_sprite(sprite, ("scenery", name), side * x, 0, z, height, side > 0, cam=cam)
+                self.blit_world_sprite(sprite, ("scenery", name), side * x, 0, z, height * scale_h, side > 0, cam=cam)
                 return
         if not fallback or self.fog_level(z) >= FOG_LEVELS:
             return
         sx, sy, scale = self.project(side * x, 0, z, cam)
         width = max(2, int(95 * scale))
-        height = max(2, int(250 * scale))
-        body = lerp_color(rgb("26201d") if self.restoration < 25 else rgb("191c26"), self.fog_color,
+        height = max(2, int(250 * scale * scale_h))
+        body = lerp_color(rgb("26201d") if self.visual_restoration < 25 else rgb("191c26"), self.fog_color,
                           self.fog_level(z) / FOG_LEVELS)
         pygame.draw.rect(self.screen, body, (int(sx - width / 2), int(sy - height), width, height))
 
-    def draw_margins(self, seg: int, z: float, wave_z: float) -> None:
-        """Duas fileiras por lado em cada trecho da pista: fundo (z) e borda (z + 50)."""
-        green = self.restoration >= 50.0
+    def draw_margins(self, seg: int, z: float) -> None:
+        """Duas fileiras por lado em cada trecho da pista: fundo (z) e borda (z + 50).
+
+        Num trecho restaurado a peça industrial afunda e a árvore cresce enquanto ele chega.
+        """
         mid_cam = self.mid_cam()
         margin_cam = self.cam_x * MARGIN_PARALLAX
         border_z = z + 50.0
+        g_mid = g_border = self.segment_green(seg)
         for side in (-1, 1):
-            if green and z <= wave_z:
-                self.draw_tree(seg, side, MID_ROW_X, z, 1.0, mid_cam)
-            else:
-                self.draw_industrial(MID_ROW_SPECS, seg, side, MID_ROW_X, z, mid_cam, fallback=seg % 2 == 0)
+            if g_mid < 1.0:
+                self.draw_industrial(MID_ROW_SPECS, seg, side, MID_ROW_X, z, mid_cam,
+                                     fallback=seg % 2 == 0, scale_h=1.0 - g_mid)
+            if g_mid > 0.0:
+                self.draw_tree(seg, side, MID_ROW_X, z, 1.0, mid_cam, grow=g_mid)
             if border_z > MARGIN_MAX_Z:
                 continue   # peças pequenas da borda: invisíveis tão longe, na neblina
             if (seg + (side > 0)) % 2:
                 continue   # borda alterna de lado a cada trecho: menos peças, mesma continuidade
-            if green and border_z <= wave_z:
-                self.draw_tree(seg + 3, side, MARGIN_X, border_z, 0.45, margin_cam)
-            else:
+            if g_border < 1.0:
                 self.draw_industrial(MARGIN_PROP_SPECS, seg // 2, side, MARGIN_X, border_z, margin_cam,
-                                     fallback=False)
+                                     fallback=False, scale_h=1.0 - g_border)
+            if g_border > 0.0:
+                self.draw_tree(seg + 3, side, MARGIN_X, border_z, 0.45, margin_cam, grow=g_border)
 
     def draw_world(self) -> None:
         a, b, t = self.visual_stage_pair()
@@ -2219,9 +2453,8 @@ class Game:
         road_odd = lerp_color(a.road_odd, b.road_odd, t)
         lane_base = lerp_color(a.lane_line, b.lane_line, t)
         purified_road = lerp_color(road_even, rgb("8bcf78"), 0.2)
-        wave_z = 180.0 + (self.restoration / 100.0) ** 1.15 * 2150.0
-
-        green = self.restoration >= GRASS_START_RESTORATION
+        wave_z = self.restoration_wave_z()       # pista purificada
+        green = bool(self.green_since)           # algum trecho já restaurado (grama e árvores)
         # Com as duas texturas, o chão inteiro é coberto por elas (concreto/grama).
         textured_ground = self.concrete_texture is not None and (self.grass_texture is not None or not green)
         stretches = []
@@ -2235,18 +2468,18 @@ class Game:
             haze = clamp((z + 50.0 - FOG_START) / (FOG_END - FOG_START), 0.0, 1.0)
             if not textured_ground:
                 # 1ª passada (sem texturas): chão de cada trecho em cores lisas.
-                ground = GRASS_FALLBACK[seg % 2] if green and z <= wave_z else water_base
+                ground = GRASS_FALLBACK[seg % 2] if self.segment_green(seg) > 0.0 else water_base
                 pygame.draw.polygon(self.screen, lerp_color(ground, fog, haze),
                                     [(0, left2[1]), (WIDTH, right2[1]), (WIDTH, right1[1]), (0, left1[1])])
             stretches.append((seg, z, next_z, left1, right1, left2, right2, haze))
 
         # 2ª passada: chão com textura (concreto sujo e, onde já foi restaurado, grama).
-        self.draw_ground(wave_z)
+        self.draw_ground()
 
         # 3ª passada: pista, faixas e margens, do fundo para a frente.
         for seg, z, next_z, left1, right1, left2, right2, haze in stretches:
-            purified = z <= wave_z
-            base_color = purified_road if purified else (road_even if seg % 2 == 0 else road_odd)
+            raw_color = road_even if seg % 2 == 0 else road_odd
+            base_color = lerp_color(raw_color, purified_road, self.purify_amount(z, wave_z))
             local_color = lerp_color(base_color, fog, haze)
             lane_line = lerp_color(lane_base, fog, haze)
             pygame.draw.polygon(self.screen, local_color, [(left1[0], left1[1]), (right1[0], right1[1]), (right2[0], right2[1]), (left2[0], left2[1])])
@@ -2256,7 +2489,7 @@ class Game:
                 p2 = self.project(LANE_WIDTH * divider, 0, next_z)
                 pygame.draw.line(self.screen, lane_line, (p1[0], p1[1]), (p2[0], p2[1]), max(1, int(4 * p1[2])))
 
-            self.draw_margins(seg, z, wave_z)
+            self.draw_margins(seg, z)
 
     def draw_ground_shadow(self, x: float, y: float, z: float, width: float, alpha: int) -> None:
         alpha = int(alpha * (1.0 - self.fog_level(z) / FOG_LEVELS))
@@ -2321,7 +2554,7 @@ class Game:
 
     def draw_entities(self, in_front: bool) -> None:
         """Desenha atrás (in_front=False) ou à frente (True) do avião."""
-        wave_z = 180.0 + (self.restoration / 100.0) ** 1.15 * 2150.0
+        wave_z = self.restoration_wave_z()
         self.entities.sort(key=lambda e: e.z, reverse=True)
         for entity in self.entities:
             if (entity.z < PLAYER_Z) == in_front:
@@ -2574,19 +2807,22 @@ class Game:
             hints = [
                 "Mão para os lados: trocar avião     Mão para cima: trocar piloto",
                 "Mão levantada: decolar     Mão para baixo: oficina de pintura",
-                f"R: recalibrar     V: trocar o controle     Recorde: {self.high_score:,}",
+                f"R: recalibrar     V: trocar o controle     Recorde: {self.high_score:,}     "
+                f"Pontos: {self.points_text(self.wallet)}",
             ]
         elif self.control_mode == "camera":
             hints = [
                 "Corpo ← / →: trocar avião     Corpo ↑ / ↓: trocar piloto",
                 "Mão direita levantada: decolar     Mão esquerda levantada: oficina de pintura",
-                f"R: recalibrar     V: trocar o controle     Recorde: {self.high_score:,}",
+                f"R: recalibrar     V: trocar o controle     Recorde: {self.high_score:,}     "
+                f"Pontos: {self.points_text(self.wallet)}",
             ]
         else:
             hints = [
                 "← / → ou A / D: trocar avião     ↑ / ↓ ou W / S: trocar piloto",
                 f"C: oficina de pintura ({self.paint_label()})     V: controle por câmera (corpo ou uma mão)",
-                f"ENTER ou ESPAÇO: decolar          Recorde: {self.high_score:,}",
+                f"ENTER ou ESPAÇO: decolar          Recorde: {self.high_score:,}     "
+                f"Pontos para a loja: {self.points_text(self.wallet)}",
             ]
         for i, line in enumerate(hints):
             surf = self.small_font.render(line, True, rgb("c5e1c7"))
@@ -2595,6 +2831,22 @@ class Game:
             self.screen.blit(self.webcam_surface, self.webcam_surface.get_rect(topright=(WIDTH - 24, 96)))
             pygame.draw.rect(self.screen, rgb("c5e1c7"),
                              self.webcam_surface.get_rect(topright=(WIDTH - 24, 96)), 1)
+
+    @staticmethod
+    def points_text(value: int) -> str:
+        return f"{value:,}".replace(",", ".")
+
+    def draw_price_tag(self, rect: pygame.Rect, price: int) -> None:
+        """Padrão ainda não comprado: escurece a miniatura e mostra cadeado e preço."""
+        shade = pygame.Surface(rect.size, pygame.SRCALPHA)
+        shade.fill((5, 10, 9, 150))
+        self.screen.blit(shade, rect)
+        color = rgb("fff59d") if self.wallet >= price else rgb("c5c9c7")
+        cx, top = rect.centerx, rect.y + 5
+        pygame.draw.arc(self.screen, color, pygame.Rect(cx - 5, top, 10, 10), 0, math.pi, 2)
+        pygame.draw.rect(self.screen, color, pygame.Rect(cx - 7, top + 5, 14, 9), border_radius=2)
+        label = self.small_font.render(self.points_text(price), True, color)
+        self.screen.blit(label, label.get_rect(midbottom=(cx, rect.bottom - 2)))
 
     def pattern_thumb(self, pattern: str, size: Tuple[int, int]) -> Optional[pygame.Surface]:
         key = (pattern, size)
@@ -2620,8 +2872,8 @@ class Game:
 
         bob = math.sin(pygame.time.get_ticks() / 400.0) * 5
         cards = (
-            (pygame.Rect(60, 88, 600, 292), True, "Hangar (3/4)"),
-            (pygame.Rect(690, 88, 350, 292), False, "Em voo"),
+            (pygame.Rect(60, 88, 600, 262), True, "Hangar (3/4)"),
+            (pygame.Rect(690, 88, 350, 262), False, "Em voo"),
         )
         for card, menu_view, label in cards:
             pygame.draw.rect(self.screen, (18, 30, 26), card, border_radius=14)
@@ -2653,8 +2905,8 @@ class Game:
 
         # Linha 1: cores lisas. Com um padrão escolhido, ela fica apagada.
         row_label("COR" + ("  (o padrão usa as cores próprias; escolher uma cor volta ao liso)" if pattern_on else ""),
-                  398, self.paint_row == 0)
-        for i, ((_, _, color), rect) in enumerate(zip(PLANE_COLORS, swatch_rects(len(PLANE_COLORS), 410))):
+                  364, self.paint_row == 0)
+        for i, ((_, _, color), rect) in enumerate(zip(PLANE_COLORS, swatch_rects(len(PLANE_COLORS), 376))):
             selected = i == self.paint_index and not pattern_on
             if selected:
                 rect = rect.inflate(8, 8)
@@ -2670,9 +2922,12 @@ class Game:
             outline = accent if selected and self.paint_row == 0 else ((200, 210, 205) if selected else (70, 80, 78))
             pygame.draw.rect(self.screen, outline, rect, 3 if selected else 1, border_radius=8)
 
-        # Linha 2: padrões do estúdio (miniatura da textura).
-        row_label("PADRÃO", 474, self.paint_row == 1)
-        for i, ((key, _), rect) in enumerate(zip(PLANE_PATTERNS, swatch_rects(len(PLANE_PATTERNS), 486))):
+        # Linha 2: padrões do estúdio (miniatura da textura). São muitos para uma fileira só:
+        # a primeira metade fica em cima e a segunda embaixo; a escolha segue a ordem da lista.
+        row_label("PADRÃO", 436, self.paint_row == 1)
+        half = (len(PLANE_PATTERNS) + 1) // 2
+        pattern_rects = swatch_rects(half, 450) + swatch_rects(len(PLANE_PATTERNS) - half, 500)
+        for i, ((key, _), rect) in enumerate(zip(PLANE_PATTERNS, pattern_rects)):
             selected = i == self.pattern_index if pattern_on else key == "liso"
             if selected:
                 rect = rect.inflate(8, 8)
@@ -2683,18 +2938,34 @@ class Game:
                 pygame.draw.rect(self.screen, (245, 245, 240) if key == "liso" else (60, 66, 64), rect, border_radius=8)
                 text = self.small_font.render("Liso" if key == "liso" else "?", True, (40, 46, 44))
                 self.screen.blit(text, text.get_rect(center=rect.center))
+            if self.pattern_locked(key):
+                self.draw_price_tag(rect, PATTERN_PRICES[key])
             outline = accent if selected and self.paint_row == 1 else ((200, 210, 205) if selected else (70, 80, 78))
             pygame.draw.rect(self.screen, outline, rect, 3 if selected else 1, border_radius=8)
 
         if pattern_on:
             chosen_text = f"Padrão: {PLANE_PATTERNS[PLANE_PATTERN_KEYS.index(self.plane_pattern_key)][1]}"
+            if self.pattern_locked(self.plane_pattern_key):
+                price = PATTERN_PRICES[self.plane_pattern_key]
+                action = "ENTER: comprar" if self.wallet >= price else "pontos insuficientes"
+                chosen_text += f"  —  {self.points_text(price)} pontos ({action})"
         else:
             chosen_text = f"Cor: {PLANE_COLORS[self.paint_index][1]}"
-        chosen = self.font.render(chosen_text, True, rgb("fff59d"))
-        self.screen.blit(chosen, chosen.get_rect(center=(WIDTH // 2, 552)))
+        wallet = self.font.render(f"Pontos: {self.points_text(self.wallet)}", True, rgb("fff59d"))
+        self.screen.blit(wallet, wallet.get_rect(topright=(WIDTH - 24, 20)))
+        if self.shop_message_timer > 0 and self.shop_message:
+            # O aviso de compra ocupa a linha do texto de escolha enquanto está na tela.
+            note = self.font.render(self.shop_message, True, (255, 255, 255))
+            box = note.get_rect(center=(WIDTH // 2, 558)).inflate(24, 12)
+            pygame.draw.rect(self.screen, (18, 30, 26), box, border_radius=10)
+            pygame.draw.rect(self.screen, accent, box, 2, border_radius=10)
+            self.screen.blit(note, note.get_rect(center=box.center))
+        else:
+            chosen = self.font.render(chosen_text, True, rgb("fff59d"))
+            self.screen.blit(chosen, chosen.get_rect(center=(WIDTH // 2, 558)))
         hints = [
             "↑ / ↓ ou W / S: linha de cores ou de padrões     ← / → ou A / D: escolher (prévia na hora)",
-            "ENTER, ESPAÇO ou C: confirmar     ESC: cancelar     A pintura vale só para o papel deste avião.",
+            "ENTER, ESPAÇO ou C: confirmar (com cadeado: comprar)     ESC: cancelar     Vale só para este avião.",
         ]
         if self.control_mode == "mao":
             hints.append("Mão para os lados: escolher     para cima: trocar linha     levantada: salvar     para baixo: cancelar")
@@ -2702,7 +2973,7 @@ class Game:
             hints.append("Corpo ← / → e ↑ / ↓: escolher     Mão direita: salvar     Mão esquerda: cancelar")
         for i, line in enumerate(hints):
             surf = self.small_font.render(line, True, rgb("c5e1c7"))
-            self.screen.blit(surf, surf.get_rect(center=(WIDTH // 2, 584 + i * 24)))
+            self.screen.blit(surf, surf.get_rect(center=(WIDTH // 2, 588 + i * 24)))
 
     def draw(self) -> None:
         self.draw_background()
@@ -2731,7 +3002,8 @@ class Game:
         elif self.game_over:
             self.draw_overlay(
                 "FIM DE JOGO",
-                f"Resíduos coletados: {self.trash_cleaned:,}   Recorde: {self.high_score:,}",
+                f"Resíduos coletados: {self.trash_cleaned:,}   Recorde: {self.high_score:,}   "
+                f"Pontos na carteira: {self.points_text(self.wallet)}",
                 "ENTER ou ESPAÇO: voar de novo   |   C: trocar avião no hangar"
                 + {"mao": "   |   Mão levantada: voar de novo   Mão para baixo: hangar",
                    "camera": "   |   Mão direita: voar de novo   Mão esquerda: hangar"}.get(self.control_mode, ""),

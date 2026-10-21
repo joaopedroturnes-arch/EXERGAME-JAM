@@ -134,14 +134,15 @@ continua onde está para fins de jogo.
 
 | Elemento | Modelos | Onde aparecem |
 |---|---|---|
-| Props Dieselpunk | 01 Fábrica, 02 Chaminé, 03 Caldeira, 04 Rede de tubos com válvula, 05 Tambores, 06 Monte de lixo, 07 Pilha de sucata, 08 Caçamba | Fileira de fundo das margens nas eras I e II, intercalados com as estruturas do kit. Chaminé, caldeira, tubos, tambores, monte de lixo, sucata e caçamba também são obstáculos (tabela acima). A fábrica aparece só na margem. |
+| Props Dieselpunk | 01 Fábrica, 02 Chaminé, 03 Caldeira, 04 Rede de tubos com válvula, 05 Tambores, 06 Monte de lixo, 07 Pilha de sucata, 08 Caçamba | Fileira de fundo das margens nas eras I e II, intercalados com as estruturas do kit. A caçamba saiu dessa fileira, trocada pela caixa industrial do guia (ver a linha seguinte); ela continua como obstáculo. Chaminé, caldeira, tubos, tambores, monte de lixo, sucata e caçamba também são obstáculos (tabela acima). A fábrica aparece só na margem. |
 | Kit Dieselpunk_Scenario | 28 modelos de `modelos_3d/Dieselpunk_Scenario` | Eras I e II. Fileira junto à pista: tambor de combustível, caixa, carretel de cabo, painel de controle, tubos de vapor, gerador, compressor, passarela e luz âmbar. Fileira de fundo: torre industrial, guindaste, silo, chaminé, tanque de pressão, paredes de fábrica, elevador de carga, ventilador, escada, suporte, portão de hangar, torre de energia e fábrica distante. |
+| Peças do guia | `SCN_CaixaIndustrial_Cenario`, `SCN_Galpao_Restaurado` e `SCN_TorreChamine_Restaurada` (pasta `scenario_sprites/`) | Caixa industrial: fileira de fundo das eras I e II, no lugar da caçamba. Galpão e torre restaurados: fileira de fundo das eras III e IV (restauração de 50% ou mais), em 1 trecho a cada 6, no lugar de uma árvore. |
 | Silhuetas do horizonte | silo, fábrica distante, torre de energia, torre industrial, chaminé, guindaste, tanque e elevador do kit; árvores Solarpunk 01 a 10 | Horizonte, em duas fileiras. As silhuetas industriais viram árvores conforme a restauração sobe. |
 | Céu e nuvens | panorama de céu poluído e nuvem de fumaça do kit | Céu das eras poluídas. Somem aos poucos com a restauração, dando lugar ao céu da era e a nuvens claras. |
 | Árvores Solarpunk | 01 a 10 | Margens das eras III e IV, com restauração de 50% ou mais, nos trechos já purificados: na fileira de fundo e, menores, na borda da pista. Fora deles, a margem mostra os modelos industriais. |
 | Grama | textura gerada por `tools/make_grass_texture.py` | Chão fora da pista nas eras III e IV, a partir de 50% de restauração, do avião até a frente de restauração: o mesmo trecho em que as árvores aparecem. Além dela, concreto sujo. |
 | Concreto sujo | textura gerada por `tools/make_concrete_texture.py` | Chão fora da pista em toda a fase inicial (eras I e II) e, a partir de 50%, além da frente de restauração. |
-| Lixo coletável | 10 modelos de sucata (lista em `trash_sprites/`, abaixo) | Pista, em três alturas |
+| Lixo coletável | 4 modelos de lixo (lista em `trash_sprites/`, abaixo) | Pista, em três alturas |
 | Aviões | 11 modelos do Estúdio (lista na seção Avião e piloto) | Hangar e voo |
 | Power-ups | escudo, ímã e reparo (sprites em `powerup_sprites/`) | Pista |
 
@@ -457,11 +458,11 @@ impede o jogo de abrir.
 | `plane_uv/` e `plane_menu_uv/` | `<modelo>__<piloto>.png`: mapa UV do papel (R = coluna, G = linha da textura), do mesmo tamanho do sprite correspondente | `extract_planes.py` | o padrão não aparece; o avião usa a cor escolhida (ou as cores originais) |
 | `plane_patterns/` | `<padrão>.png`: textura 256×256 de cada padrão de pintura | `extract_planes.py` | o padrão não aparece (miniatura com "?" na Oficina) |
 | `maneuvers/` | `maneuvers.json`: curvas das manobras (giro, nariz, deslocamentos) | `extract_maneuvers.py` | usa curvas simples embutidas no código |
-| `trash_sprites/` | `rusty_can`, `chemical_battery`, `radio_transceiver`, `junkyard_mask`, `shattered_spotlight`, `turbine_debris`, `broken_pipe`, `scrap_heap`, `piston_pump`, `debris_plate` | `render_models.py` (grupo `trash`) | lixo desenhado como círculo |
+| `trash_sprites/` | `COL_Lixo_Cubo`, `COL_Lixo_Lata`, `COL_Lixo_Piramide`, `COL_Semente` (os 10 PNG antigos, como `rusty_can`, ainda estão na pasta, mas não são usados) | modelos do guia (`modelos_guia/`) | lixo desenhado como círculo |
 | `solarpunk_sprites/` | `01_art_nouveau_solar_tree` até `10_arvore_cristalina` | `render_models.py` (grupo `trees`) | árvore desenhada por código |
-| `dieselpunk_sprites/` | `fabrica`, `chamine`, `caldeira`, `tubos_valvula`, `tambores`, `lixo`, `sucata`, `cacamba` | `render_models.py` (grupo `props`) | props como retângulo escuro; obstáculos como blocos |
+| `dieselpunk_sprites/` | `fabrica`, `chamine`, `caldeira`, `tubos_valvula`, `tambores`, `lixo`, `sucata`, `cacamba` | `render_models.py` (grupo `props`); `fabrica`, `chamine`, `tambores` e `cacamba` vêm dos modelos do guia | props como retângulo escuro; obstáculos como blocos |
 | `powerup_sprites/` | `shield`, `magnet`, `repair` | arquivos próprios | círculo colorido |
-| `scenario_sprites/` | 28 peças do kit Dieselpunk_Scenario, como `fuel_barrel` e `industrial_tower_a` (lista completa em `SCENARIO_SPRITES`, no código) | `render_models.py` (grupo `scenario`) | a peça é pulada; a fileira de fundo usa os props Dieselpunk e, sem eles, retângulos escuros |
+| `scenario_sprites/` | 31 PNG: 28 peças do kit Dieselpunk_Scenario, como `fuel_barrel` e `industrial_tower_a`, e 3 peças do guia (`SCN_*`). Lista completa em `SCENARIO_SPRITES`, no código | `render_models.py` (grupo `scenario`) para o kit; as peças `SCN_*` e `steam_pipe_corner` vêm dos modelos do guia | a peça é pulada; a fileira de fundo usa os props Dieselpunk e, sem eles, retângulos escuros |
 | `skyline_sprites/` | `background_silo`, `distant_factory`, `power_pylon`, `industrial_tower_a`, `industrial_chimney`, `fixed_crane`, `pressure_tank`, `cargo_elevator` | `render_models.py` (grupo `scenario`) | silhueta do horizonte desenhada por código |
 | `ground/` | `grass`, `concrete` | `make_grass_texture.py` e `make_concrete_texture.py` | sem grama: grama em duas cores lisas, alternadas por trecho; sem concreto: chão liso na cor da era |
 | `atmosphere/` | `sky_panorama`, `smog_cloud` | copiados do kit por `render_models.py` (grupo `scenario`) | céu só em degradê, sem nuvens |
@@ -480,6 +481,43 @@ ou apague essas pastas dentro de `_internal\assets\` no executável. O código d
 
 A pasta `powerup_models/` contém OBJ/MTL de referência (escudo, ímã e reparo). Ela não é usada na partida:
 o spec a copia para o pacote, mas o código não a carrega.
+
+## Loja de padrões na Oficina (21/10/2026)
+
+- Cada lixo coletado soma, além do placar da partida, numa **carteira de pontos** que acumula entre as partidas e fica salva junto do recorde (`pontos` em `eco_runner_recorde.json`, na pasta de dados do jogo).
+- Na Oficina de pintura, os padrões (menos o Liso) aparecem com cadeado e preço. Dá para ver a prévia de qualquer padrão; confirmar (ENTER, ESPAÇO, C ou o gesto de salvar) num padrão com cadeado **compra** e desconta da carteira; confirmar de novo salva a pintura. Sem pontos suficientes, aparece quanto falta. As 15 cores continuam livres.
+- Preços (`PATTERN_PRICES` no topo do `eco_runner.py`): Camuflado selva, deserto e ártico 300; Listras e Xadrez 500; Fibra hexagonal e Tigre 700; Chamas hot rod e Raios solares 900; Pop art e Prisma 1.100; Brasil 1.300; Cyberpunk 1.600; Chamas de plasma 1.800; Galáxia estelar 2.200.
+- Padrão comprado vale para todos os aviões. Quem já usava um padrão antes da loja fica com ele liberado. O hangar e a tela de fim de jogo mostram a carteira.
+
+### Texturas de papel na loja (21/10/2026)
+
+- Entraram 10 texturas do pacote `texturas_aviao_papel` (`assets/plane_patterns/`, 512×512, reduzidas para 256 no carregamento, como os demais padrões): Kraft pardo, Papel reciclado, Folhas ecológicas, Caderno pautado, Jornal, Bolinhas, Listras de papel, Origami seigaiha, Planta técnica e Aquarela.
+- Preços mais altos, de 2.500 a 6.000 pontos: Kraft pardo 2.500; Papel reciclado 2.800; Folhas ecológicas e Caderno pautado 3.000; Jornal e Bolinhas 3.500; Listras de papel 3.800; Origami seigaiha 5.000; Planta técnica 5.500; Aquarela 6.000.
+- Ficaram de fora 5 texturas parecidas com padrões que já estavam na loja ou quase lisas: Xadrez de papel (igual ao Xadrez de corrida), Quadriculado (quase igual ao Caderno pautado), Folha branca (quase o liso), Vintage (muito parecida com o Papel reciclado) e Camuflagem de papel (camuflagem verde parecida com o Camuflado selva). Os 5 PNG correspondentes (`folha_branca`, `quadriculado`, `xadrez_papel`, `vintage`, `camuflagem`) não são mais carregados pelo jogo; podem ser apagados de `assets/plane_patterns/`.
+- A chave `listras_papel` foi separada da `listras` já existente, para não substituir o arquivo atual.
+- A Oficina mostra os padrões em duas fileiras de 13. A escolha com as setas segue a ordem da lista. O aviso de compra ocupa a linha do texto de escolha enquanto está na tela.
+- Os padrões antigos que se parecem entre si (Chamas hot rod e Chamas de plasma; Xadrez de corrida e Listras de corrida, que são de cores diferentes) foram mantidos, porque quem já comprou algum deles perderia os pontos gastos.
+
+## Transição de cenário suavizada (21/10/2026)
+
+- O cenário (cores do céu e da pista, poluição, chão e margens) segue a restauração aos poucos: cada lixo coletado soma na hora no placar, mas o desenho alcança o valor em cerca de 3 s (`VISUAL_RESTORATION_TIME` = 2,8 s), sem degrau a cada coleta. Velocidade, placar e nome da era usam o valor real.
+- A era verde chega **do horizonte para o avião**: a partir de 50% (no valor do cenário), os trechos de pista que entram lá longe, na neblina (além de `GREEN_CONVERT_Z`), passam a vir restaurados. A parcela de trechos restaurados sobe de 0 a 100% entre 50% e 80% (`GREEN_SWEEP_RESTORATION` = 30 pontos), espalhada ao longo da pista. Os trechos que já estavam perto continuam como estão até passar pelo avião; nada vira verde de repente na frente do jogador.
+- Num trecho restaurado, a peça industrial afunda no chão e a árvore cresce enquanto o trecho vem chegando (`GREEN_GROW_DISTANCE`, cerca de 2 s); o chão do trecho vira grama junto.
+- A pista passa da cor suja para a purificada com gradiente (`ROAD_PURIFY_BAND`), e as silhuetas do horizonte trocam com fade de 0,6 s (`SKYLINE_FADE_S`).
+- Backup: pasta `eco_runner_backup_antes_transicao_20261021` (estado antes da primeira suavização) e `eco_runner_backup_transicao_etapa1_20261021` (primeira suavização, com o verde saindo da câmera), ao lado da pasta do jogo.
+
+## Modelos do guia aplicados (21/10/2026)
+
+Nesta versão, alguns sprites foram trocados pelos modelos do guia de modelos (`modelos_guia/`):
+
+- **Lixo coletável**: eram 10 modelos de sucata; agora são 4 (`COL_Lixo_Cubo`, `COL_Lixo_Lata`, `COL_Lixo_Piramide` e `COL_Semente`). Os 10 PNG antigos continuam em `trash_sprites/`, sem uso.
+- **Sprites com o mesmo nome, substituídos**: `fabrica`, `chamine`, `tambores` e `cacamba` (em `dieselpunk_sprites/`) e `steam_pipe_corner` (em `scenario_sprites/`).
+- **Sprites novos** em `scenario_sprites/`: `SCN_CaixaIndustrial_Cenario`, `SCN_Galpao_Restaurado` e `SCN_TorreChamine_Restaurada` (ver "Quais modelos aparecem onde").
+- **Alturas**: na fileira de fundo, a fábrica foi de 250 para 186 e os tambores de 165 para 119. Na borda, `steam_pipe_corner` foi de 76 para 70. Os obstáculos mantêm altura e colisão.
+
+**Backup do estado anterior**: pasta `eco_runner_backup_original_20261021`, ao lado da pasta do jogo. Ela guarda os arquivos que foram sobrescritos: `eco_runner.py`, `README.md`, `tests/test_eco_runner.py`, os 4 PNG de `assets/dieselpunk_sprites/` (`fabrica`, `chamine`, `tambores`, `cacamba`) e `assets/scenario_sprites/steam_pipe_corner.png`.
+
+**Como voltar ao estado anterior**: copie o conteúdo da pasta de backup por cima da pasta do jogo, mantendo a mesma estrutura. Os 7 PNG novos (`COL_*` em `trash_sprites/` e `SCN_*` em `scenario_sprites/`) podem ficar ou ser apagados: o código antigo não os usa, mas eles entram no pacote do PyInstaller se ficarem.
 
 ## Regenerar os sprites a partir dos modelos
 
@@ -506,7 +544,7 @@ python tools/render_models.py --models PASTA_MODELOS_3D [--only GRUPOS] [--out P
   dentro dela, os modelos de sucata usam essa textura.
 - `--only`: renderiza só os grupos indicados: `trees`, `props`, `trash` e `scenario`. Sem `--only`, gera tudo.
 - `--scenario`: pasta do kit `Dieselpunk_Scenario`. O padrão é `PASTA_MODELOS_3D/Dieselpunk_Scenario`.
-  O grupo `scenario` gera `scenario_sprites/` (28 peças), `skyline_sprites/` (8 silhuetas) e copia o
+  O grupo `scenario` gera `scenario_sprites/` (as 28 peças do kit; as 3 `SCN_*` do guia não são geradas aqui), `skyline_sprites/` (8 silhuetas) e copia o
   panorama do céu e a nuvem de fumaça para `atmosphere/`.
 - `--out`: pasta de saída. O padrão é a `assets/` do projeto.
 
@@ -618,11 +656,11 @@ eco_runner/
 │   ├── plane_menu_uv/      mapas UV do papel (vista 3/4)
 │   ├── plane_patterns/     15 texturas de padrões de pintura do estúdio
 │   ├── maneuvers/          curvas das manobras (maneuvers.json)
-│   ├── trash_sprites/      10 modelos de sucata coletáveis
+│   ├── trash_sprites/      4 modelos de lixo coletáveis
 │   ├── solarpunk_sprites/  10 árvores (eras III e IV)
 │   ├── dieselpunk_sprites/ 8 props (margens das eras I e II e obstáculos)
 │   ├── powerup_sprites/    escudo, ímã e reparo
-│   ├── scenario_sprites/   28 peças do kit Dieselpunk_Scenario (margens)
+│   ├── scenario_sprites/   31 peças: 28 do kit Dieselpunk_Scenario e 3 do guia (margens e fileira de fundo)
 │   ├── skyline_sprites/    silhuetas do horizonte (kit Dieselpunk_Scenario)
 │   ├── atmosphere/         panorama do céu poluído e nuvem de fumaça
 │   ├── ground/             texturas do chão: grama e concreto sujo
