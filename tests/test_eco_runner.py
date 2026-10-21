@@ -220,7 +220,7 @@ def test_selecao_persiste_entre_instancias(isolated_data_dir):
     first.handle_key(pygame.K_RETURN)          # decolar grava a escolha
     config = json.loads((eco_runner.user_data_dir() / CONFIG_FILENAME).read_text(encoding="utf-8"))
     assert config == {"aviao": PLANE_MODELS[3][0], "piloto": PILOTS[5][0], "cores": {}, "padroes": {},
-                      "controle": "teclado"}
+                      "controle": "teclado", "modo": "dificil"}
     second = Game()
     assert (second.plane_index, second.pilot_index) == (3, 5)
 
@@ -581,6 +581,17 @@ def test_game_over_apos_tres_colisoes(game):
     assert game.state == "playing"
 
 
+def test_progresso_mais_lento_por_lixo(game):
+    assert eco_runner.RESTORATION_PER_TRASH == pytest.approx(1.4)
+    start_flight(game)
+    game.restoration = 10.0
+    game.combo = 1
+    game.collect_trash(add(game, "trash", lane=0, y=60.0))
+    assert game.restoration == pytest.approx(11.4)
+    por_era = eco_runner.ERA_SPAN / eco_runner.RESTORATION_PER_TRASH
+    assert 23 <= por_era <= 25                                       # ~24 lixos por era (antes ~12)
+
+
 def test_reparo_recupera_vida_ou_restauracao(game):
     start_flight(game)
     game.lives = 2
@@ -591,7 +602,7 @@ def test_reparo_recupera_vida_ou_restauracao(game):
     add(game, "repair", lane=0, y=60.0)       # já com 3 vidas: vira restauração
     game.update(DT)
     assert game.lives == 3
-    assert game.restoration == pytest.approx(5.0 + 3.0)
+    assert game.restoration == pytest.approx(5.0 + eco_runner.REPAIR_RESTORATION)
 
 
 def test_entidades_passadas_sao_removidas(game):
@@ -683,19 +694,21 @@ def test_contadores_de_obstaculos_sao_independentes(game):
 
 
 # ------------------------------------------------------------------- eras
-def test_quatro_eras_por_restauracao(game):
-    assert len(STAGES) == 4
-    expected = {0: "DIESELPUNK", 24.9: "DIESELPUNK", 25: "CYBER_POLLUTION",
-                50: "ECO_TRANSITION", 75: "SOLARPUNK_NOUVEAU", 100: "SOLARPUNK_NOUVEAU"}
+def test_tres_eras_com_mesmo_espacamento(game):
+    assert len(STAGES) == 3
+    gaps = [b.min_value - a.min_value for a, b in zip(STAGES, STAGES[1:])] + [100.0 - STAGES[-1].min_value]
+    assert gaps == pytest.approx([100.0 / 3] * 3)                   # um terço da barra para cada era
+    expected = {0: "DIESELPUNK", 33.3: "DIESELPUNK", 33.34: "ECO_TRANSITION",
+                66.6: "ECO_TRANSITION", 66.67: "SOLARPUNK_NOUVEAU", 100: "SOLARPUNK_NOUVEAU"}
     for value, stage_id in expected.items():
         game.restoration = float(value)
         assert game.current_stage().stage_id == stage_id, value
 
 
 def test_visual_stage_pair_interpola_entre_eras(game):
-    game.restoration = 37.5
+    game.restoration = 50.0
     a, b, t = game.visual_stage_pair()
-    assert (a.stage_id, b.stage_id) == ("CYBER_POLLUTION", "ECO_TRANSITION")
+    assert (a.stage_id, b.stage_id) == ("ECO_TRANSITION", "SOLARPUNK_NOUVEAU")
     assert t == pytest.approx(0.5)
 
 
@@ -740,7 +753,7 @@ def test_parcela_de_trechos_restaurados_sobe_de_50_a_80(game):
 
 def test_verde_chega_do_horizonte_e_nao_aparece_perto_do_aviao(game):
     start_flight(game)
-    game.restoration = 49.0                                         # ainda sem verde
+    game.restoration = eco_runner.GRASS_START_RESTORATION - 1.0    # ainda sem verde
     assert game.green_since == {}
     game.visual_restoration = 80.0                                  # todos os trechos novos vêm verdes
     game.update_green_segments()
@@ -1026,6 +1039,7 @@ def test_chao_de_concreto_na_fase_inicial_e_grama_onde_as_arvores_aparecem(game)
 def test_sem_textura_de_grama_o_concreto_nao_cobre_a_area_restaurada(game, monkeypatch):
     start_flight(game)
     game.ground_textures.pop("grass")
+    game.ground_textures.pop("meadow", None)   # a 95% os trechos já são da era final (prado)
     game.grass_texture = None
     game.restoration = 95.0
     game.draw()                                                    # não pode falhar

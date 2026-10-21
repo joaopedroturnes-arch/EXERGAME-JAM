@@ -186,10 +186,11 @@ def legacy_save_paths() -> List[Path]:
     return [app_dir() / SAVE_FILENAME]
 
 
-def _read_record(path: Path) -> int:
+def _read_record(path: Path, key: str = "recorde") -> int:
+    """"recorde" é o do Difícil (o jogo de antes); "recorde_normal" é o do modo Normal."""
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-        return max(0, int(data.get("recorde", 0)))
+        return max(0, int(data.get(key, 0)))
     except (OSError, ValueError, TypeError, AttributeError):
         return 0
 
@@ -425,6 +426,19 @@ BASE_SPEED = 460.0             # antes 560: menos fluxo para frente na tela
 # Teste da causa 3 (fluxo para frente dominante): o ganho de velocidade vindo da
 # restauração e da dificuldade foi reduzido. Valores originais: 560, 1.8 e 80.0.
 RESTORATION_SPEED_GAIN = 0.6
+# Três eras do mesmo tamanho (um terço da barra cada) e progresso mais lento: cada lixo restaura
+# 1,4 ponto (antes 2,1), então cada era pede ~24 lixos (antes ~12 por era de 25 pontos).
+ERA_SPAN = 100.0 / 3.0
+RESTORATION_PER_TRASH = 1.4
+RESTORATION_COMBO_BONUS = 0.15     # com combo >= 4 (antes 0,25)
+REPAIR_RESTORATION = 2.0           # reparo com vidas cheias (antes 3)
+# Modo Normal: 1 lixo a cada 4 do Difícil, 65 pontos fixos por lixo (sem combo) e metade da
+# velocidade. Cada lixo restaura mais para as eras chegarem em tempo parecido com o Difícil:
+# 4x menos lixo por distância e metade da distância por segundo = 8x menos lixo por segundo.
+NORMAL_TRASH_EVERY = 4
+NORMAL_TRASH_POINTS = 65
+NORMAL_SPEED_FACTOR = 0.5
+NORMAL_RESTORATION_PER_TRASH = RESTORATION_PER_TRASH * NORMAL_TRASH_EVERY / NORMAL_SPEED_FACTOR   # 11,2
 DIFFICULTY_SPEED_GAIN = 50.0
 MAX_DT = 0.05
 MAX_LATERAL_SPEED = 620.0      # unidades/s para os lados
@@ -439,6 +453,9 @@ PLANE_WIDTH = 130.0            # envergadura visual/colisão (mundo)
 PLANE_HEIGHT = 34.0
 HIGH_SCORE_SAVE_INTERVAL = 5.0
 CONFIG_FILENAME = "eco_runner_config.json"
+GAME_MODES = ("normal", "dificil")           # Normal (mais calmo) ou Difícil (o jogo original)
+GAME_MODE_LABELS = {"normal": "Normal", "dificil": "Difícil"}
+DEFAULT_GAME_MODE = "normal"
 CONTROL_MODES = ("teclado", "camera", "mao")   # teclado, corpo pela webcam ou uma mão pela webcam
 CONTROL_LABELS = {"teclado": "teclado", "camera": "corpo", "mao": "uma mão"}
 CHEAT_CODE = (pygame.K_UP, pygame.K_UP, pygame.K_DOWN, pygame.K_DOWN, pygame.K_LEFT,
@@ -480,7 +497,7 @@ FOG_LEVELS = 10
 CAMERA_HEIGHT = 155.0          # altura da câmera usada em project()
 GRASS_TILE_X = 240.0           # largura (mundo) que uma repetição da textura de grama cobre
 GRASS_TILE_Z = 120.0           # profundidade (mundo) de uma repetição da textura de grama
-GRASS_START_RESTORATION = 50.0 # mesma restauração em que as árvores passam a aparecer
+GRASS_START_RESTORATION = ERA_SPAN  # início da Era II: grama e árvores passam a aparecer
 # Transição de cenário: o desenho segue a restauração aos poucos, sem degrau a cada lixo
 # coletado (constante de tempo, em segundos). A jogabilidade usa o valor real.
 VISUAL_RESTORATION_TIME = 2.8
@@ -505,10 +522,11 @@ CONCRETE_JOINTS_X = (560.0, 860.0, 1200.0)   # juntas paralelas à pista (dos do
 CONCRETE_JOINT_COLOR = (46, 42, 38)
 GROUND_ROW_GROUP = 1.06        # linhas de escala parecida compartilham a mesma textura reduzida
 GROUND_STRIP_MIN = 560         # largura mínima (px) das faixas de textura guardadas
-GROUND_TILES = {"grass": (GRASS_TILE_X, GRASS_TILE_Z), "concrete": (CONCRETE_TILE_X, CONCRETE_TILE_Z)}
+GROUND_TILES = {"grass": (GRASS_TILE_X, GRASS_TILE_Z), "concrete": (CONCRETE_TILE_X, CONCRETE_TILE_Z),
+                "meadow": (240.0, 120.0), "paver_road": (190.0, 190.0)}   # era final: prado e pista
 # Céu poluído (panorama do kit) some conforme a restauração passa destes valores.
-POLLUTION_CLEAR_START = 20.0
-POLLUTION_CLEAR_END = 65.0
+POLLUTION_CLEAR_START = 15.0      # o céu poluído some do fim da Era I ao meio da Era II
+POLLUTION_CLEAR_END = 45.0
 SKY_PANORAMA_SCALE = 1.4       # escala do panorama 1024x512 do kit
 SKYLINE_HEIGHT = 160           # altura (px) das faixas de silhuetas do horizonte
 SKYLINE_CHUNK = 220            # largura dos pedaços ao refazer as silhuetas
@@ -564,10 +582,11 @@ class Stage:
     accent: Color
 
 STAGES = [
+    # Três eras com o mesmo espaçamento (ERA_SPAN = 33,3 pontos). A antiga Era II
+    # (Poluição Corporativa, 25%) saiu; as cores passam direto da indústria para o despertar.
     Stage("DIESELPUNK", "Era I: Dieselpunk Industrial", 0, rgb("1c1613"), rgb("4a3222"), rgb("261e18"), rgb("2b2623"), rgb("211d1a"), rgb("8d5b32"), rgb("ff7043")),
-    Stage("CYBER_POLLUTION", "Era II: Poluição Corporativa", 25, rgb("101224"), rgb("311b38"), rgb("1a1c29"), rgb("252734"), rgb("1e202b"), rgb("ab47bc"), rgb("e040fb")),
-    Stage("ECO_TRANSITION", "Era III: Despertar Ecológico", 50, rgb("1e88e5"), rgb("dce775"), rgb("26c6da"), rgb("795548"), rgb("6d4c41"), rgb("66bb6a"), rgb("69f0ae")),
-    Stage("SOLARPUNK_NOUVEAU", "Era IV: Solarpunk Art Nouveau", 75, rgb("29b6f6"), rgb("fff59d"), rgb("00acc1"), rgb("a1887f"), rgb("8d6e63"), rgb("ffd54f"), rgb("ffd54f")),
+    Stage("ECO_TRANSITION", "Era II: Despertar Ecológico", ERA_SPAN, rgb("1e88e5"), rgb("dce775"), rgb("26c6da"), rgb("795548"), rgb("6d4c41"), rgb("66bb6a"), rgb("69f0ae")),
+    Stage("SOLARPUNK_NOUVEAU", "Era III: Solarpunk Art Nouveau", 2 * ERA_SPAN, rgb("29b6f6"), rgb("fff59d"), rgb("00acc1"), rgb("a1887f"), rgb("8d6e63"), rgb("ffd54f"), rgb("ffd54f")),
 ]
 
 # Props das margens nas eras I e II (modelos 01–08 de modelos_3d), em ordem fixa.
@@ -687,6 +706,79 @@ OBSTACLE_SPECS = {
     ],
 }
 OBSTACLE_KINDS = ("low", "gate", "tower")
+
+# ------------------------------------------------------------- Era final (EcoUrbe Solarpunk)
+# A última era (Era III, restauração >= 66,7) chega por trechos, do horizonte para o avião (como a
+# varredura verde): obstáculos novos, prédios e árvores dos modelos EcoUrbe nas 3 camadas de
+# paralaxe, chão de prado, pista de piso drenante, decoração móvel no céu e no horizonte, e
+# sinais claros de COLETÁVEL (halo ciano-dourado) x COLISÃO (chevrons âmbar no chão).
+# Sprites em assets/era_final_sprites (renderizados dos modelos 3D), FX em assets/era_final_fx.
+FINAL_START_RESTORATION = 2 * ERA_SPAN   # início da última era (66,7%)
+FINAL_SWEEP_RESTORATION = 10.0       # de 66,7% a 76,7%: todos os trechos novos chegam na era final
+FINAL_GROW_DISTANCE = 900.0          # distância em que a peça nova cresce (a antiga afunda)
+FINAL_HALO_SCALE = 2.1               # halo do coletável em relação ao tamanho do sprite
+FINAL_ALERT_DEPTH = (24.0, 96.0)     # chevrons no chão: de z-96 a z-24 antes do obstáculo
+FINAL_CURB_COLOR = rgb("c9a04a")     # meio-fio dourado da pista de piso drenante
+
+# Colisão medida nos próprios sprites (tools/sprites_jogo.py + medição de alfa):
+#   low  -> y_max ~90% do topo visível; gate -> y_min = vão livre medido no centro (>= 110);
+#   tower -> largura visível na metade da altura.
+FINAL_OBSTACLE_SPECS = {
+    "low": [
+        ObstacleSpec("low", "EF_LotusSolar", 100.0, 146.0, 0.0, 82.0),
+        ObstacleSpec("low", "EF_CanteiroBiorretencao", 85.0, 180.0, 0.0, 76.0),
+        ObstacleSpec("low", "EF_Compostor", 100.0, 170.0, 0.0, 88.0),
+    ],
+    "gate": [
+        ObstacleSpec("gate", "EF_PassarelaFauna", 160.0, 277.0, 110.0, 400.0),
+        ObstacleSpec("gate", "EF_PergolaPraca", 145.0, 250.0, 110.0, 400.0),
+        ObstacleSpec("gate", "EF_ViadutoPomar", 187.0, 250.0, 110.0, 400.0),
+        ObstacleSpec("gate", "EF_ArcoTrepadeira", 140.0, 180.0, 110.0, 400.0),
+    ],
+    "tower": [
+        # Rotor acima da faixa de voo (ALT 22–155): na altura do avião só o mastro é sólido.
+        ObstacleSpec("tower", "EF_TorreEolica", 330.0, 16.0, 0.0, 400.0),
+        ObstacleSpec("tower", "EF_CiprestePV", 300.0, 70.0, 0.0, 400.0),
+        ObstacleSpec("tower", "EF_TorreWarka", 300.0, 80.0, 0.0, 400.0),
+        ObstacleSpec("tower", "EF_FotoBiorreator", 330.0, 60.0, 0.0, 400.0),
+    ],
+}
+
+# Camada média (paralaxe 0,5, x = MID_ROW_X): prédios alternados com árvores grandes.
+# Alturas em unidades de mundo (~28 por metro, a mesma escala dos obstáculos).
+FINAL_MID_SPECS: List[Tuple[str, float]] = [
+    ("EF_ResidencialTerracos", 385.0), ("EF_Carvalho", 265.0), ("EF_MercadoBambu", 190.0),
+    ("EF_Cerejeira", 270.0), ("EF_ApartamentosExo", 400.0), ("EF_Bambuzal", 295.0),
+    ("EF_CentroComunitario", 245.0), ("EF_Salgueiro", 265.0), ("EF_HubMobilidade", 210.0),
+    ("EF_Palmeira", 200.0), ("EF_EscolaTaipa", 175.0), ("EF_Carvalho", 265.0),
+]
+FINAL_MARCO = ("EF_EdificioArtNouveau", 440.0)   # marco da era: 1 trecho a cada FINAL_MARCO_A_CADA
+FINAL_MARCO_A_CADA = 9
+# Camada da borda (paralaxe 0,8, x = MARGIN_X): mobiliário urbano e árvores menores.
+FINAL_MARGIN_SPECS: List[Tuple[str, float]] = [
+    ("EF_PosteSolar", 125.0), ("EF_Floreira", 40.0), ("EF_BancoJardim", 45.0),
+    ("EF_Cerejeira", 190.0), ("EF_TotemSinal", 86.0), ("EF_Bicicletario", 73.0),
+    ("EF_PosteSolar", 125.0), ("EF_Palmeira", 170.0), ("EF_Floreira", 40.0),
+    ("EF_EstacaoVLT", 150.0), ("EF_ArvoreArtNouveau", 200.0), ("EF_BancoJardim", 45.0),
+]
+# Camada do horizonte (a mais lenta): silhuetas da cidade solarpunk na fileira de trás.
+FINAL_SKYLINE = [("EF_ResidencialTerracos", 104), ("EF_Carvalho", 66), ("EF_ApartamentosExo", 112),
+                 ("EF_MercadoBambu", 50), ("EF_EdificioArtNouveau", 124), ("EF_Bambuzal", 72),
+                 ("EF_CentroComunitario", 64), ("EF_HubMobilidade", 54), ("EF_Cerejeira", 64),
+                 ("EF_EscolaTaipa", 46), ("EF_TorreEolica", 118), ("EF_Salgueiro", 66)]
+# Decoração móvel (só visual): (sprite, topo em px, altura em px, velocidade px/s, paralaxe da câmera)
+FINAL_SKY_DECOR = [
+    ("EF_Dirigivel", 72, 44, 14.0, 0.10),       # passa por baixo/entre os painéis do HUD
+    ("EF_BalaoSolar", 98, 46, -6.0, 0.14),
+    ("EF_BalaoSolar", 58, 26, 4.0, 0.08),
+]
+FINAL_TRAM = ("EF_BondeVLT", 17, 46.0, 0.25)   # bonde no horizonte: altura px, velocidade, paralaxe
+FINAL_BIRDS = 7
+DECOR_CYCLE = WIDTH + 700                       # ciclo horizontal da decoração móvel (px)
+FINAL_SPRITES = sorted({n for n, _ in FINAL_MID_SPECS + FINAL_MARGIN_SPECS} | {FINAL_MARCO[0], FINAL_TRAM[0]}
+                       | {n for n, *_ in FINAL_SKY_DECOR} | {n for n, _ in FINAL_SKYLINE}
+                       | {s.sprite for specs in FINAL_OBSTACLE_SPECS.values() for s in specs})
+FINAL_FX = ["halo_coletavel", "alerta_chao", "icone_coletavel", "icone_obstaculo"]
 POWERUP_KINDS = ("shield", "magnet", "repair")
 
 # Aviões de papel do "Estúdio 3D Aviões, 14-Bis & Piloto" e opções de piloto.
@@ -876,10 +968,15 @@ class Hitbox:
 
 
 def obstacle_spec(entity: Entity) -> ObstacleSpec:
-    for spec in OBSTACLE_SPECS.get(entity.kind, []):
-        if spec.sprite == entity.sprite:
-            return spec
+    for table in (OBSTACLE_SPECS, FINAL_OBSTACLE_SPECS):
+        for spec in table.get(entity.kind, []):
+            if spec.sprite == entity.sprite:
+                return spec
     return OBSTACLE_SPECS[entity.kind][0]
+
+
+def is_final_obstacle(entity: Entity) -> bool:
+    return any(spec.sprite == entity.sprite for spec in FINAL_OBSTACLE_SPECS.get(entity.kind, []))
 
 
 class Game:
@@ -911,6 +1008,9 @@ class Game:
         self.scenario_sprites = self.load_sprite_set("scenario_sprites", SCENARIO_SPRITES)
         self.skyline_sprites = self.load_sprite_set("skyline_sprites", SKYLINE_SPRITES)
         atmosphere = self.load_sprite_set("atmosphere", ["sky_panorama", "smog_cloud"])
+        self.final_sprites = self.load_sprite_set("era_final_sprites", FINAL_SPRITES)
+        self.final_fx = self.load_sprite_set("era_final_fx", FINAL_FX)
+        self.decor_cache: dict = {}
         self.sprite_cache: dict = {}
         self.flipped_sprite_cache: dict = {}
         self.mip_cache: dict = {}
@@ -919,7 +1019,7 @@ class Game:
         self.skyline_state: dict = {}
         self.shadow_cache: dict = {}
         self.warm_up_queue = self.warm_up_tasks()
-        ground = self.load_sprite_set("ground", ["grass", "concrete"])
+        ground = self.load_sprite_set("ground", ["grass", "concrete", "meadow", "paver_road"])
         self.ground_textures = {name: surface.convert() for name, surface in ground.items()}
         self.grass_texture = self.ground_textures.get("grass")
         self.concrete_texture = self.ground_textures.get("concrete")
@@ -933,7 +1033,8 @@ class Game:
         self.fog_sprite_color: Color = POLLUTED_HAZE
         self.smooth_dt = 1.0 / FPS
         self.running = True
-        self.high_score = self.load_high_score()
+        self.game_mode = self.load_game_mode()
+        self.high_scores = self.load_high_scores()      # um recorde por modo; carteira da loja é uma só
         self.plane_index, self.pilot_index = self.load_selection()
         self.plane_colors = self.load_plane_colors()
         self.plane_patterns = self.load_plane_patterns()
@@ -1201,15 +1302,18 @@ class Game:
             if name == "trees":
                 layout = [(n, int(h * 0.42)) for n, h in SOLARPUNK_TREE_SPECS]
                 self.skyline_cache[key] = self.build_skyline(layout, self.tree_sprites)
+            elif name == "city":
+                self.skyline_cache[key] = self.build_skyline(FINAL_SKYLINE, self.final_sprites)
             else:
                 layout = SKYLINE_BACK if name == "back" else SKYLINE_FRONT
                 self.skyline_cache[key] = self.build_skyline(layout, self.skyline_sprites)
         return self.skyline_cache[key]
 
-    def skyline_target(self) -> Tuple[int, tuple]:
-        """Estado desejado das silhuetas: troca indústria → árvores e cor da neblina."""
+    def skyline_target(self) -> Tuple[int, tuple, int]:
+        """Estado desejado das silhuetas: indústria → árvores → cidade solarpunk, e cor da neblina."""
         industrial = clamp(self.pollution * 1.4, 0.0, 1.0) if self.tree_sprites else 1.0
-        return int(industrial * 10 + 0.5), tuple(c // 16 for c in self.fog_color)
+        city = int(self.final_share() * 10 + 0.5) if self.final_sprites else 0
+        return int(industrial * 10 + 0.5), tuple(c // 16 for c in self.fog_color), city
 
     def skyline_job(self, name: str, target: Tuple[int, tuple]) -> dict:
         """Prepara uma fileira nova em pedaços de SKYLINE_CHUNK px.
@@ -1226,6 +1330,10 @@ class Game:
         trees = self.skyline_base("trees") if name == "front" else None
         if trees is not None and level < 10:
             parts.append((trees, SKYLINE_HAZE["trees"], 1.0 - level / 10))
+        city_level = target[2] if len(target) > 2 else 0
+        city = self.skyline_base("city") if name == "back" and city_level > 0 else None
+        if city is not None:
+            parts.append((city, SKYLINE_HAZE["back"] * 0.8, city_level / 10))
         surface = pygame.Surface((FAR_TILE, SKYLINE_HEIGHT), pygame.SRCALPHA) if parts else None
         fog = self.fog_color
 
@@ -1382,12 +1490,22 @@ class Game:
         if not self.ground_textures:
             return
         flags = self.green_flags()               # uma vez por quadro, não por linha
+        final_flags = self.final_flags()
+        meadow = "meadow" in self.ground_textures
+        paver = "paver_road" in self.ground_textures
+        road_jobs = []
         distance = self.distance_travelled
         cam = self.cam_x
         jobs = []
         append = jobs.append
         for y, z, group in self.ground_rows:
-            name = "grass" if flags and self.ground_is_green(z, flags) else "concrete"
+            is_final = bool(final_flags) and self.flag_at(z, final_flags)
+            if is_final and meadow:
+                name = "meadow"
+            else:
+                name = "grass" if flags and self.ground_is_green(z, flags) else "concrete"
+            if is_final and paver:
+                self.queue_road_row(road_jobs, y, z, group, distance, cam)
             info = self.ground_row_info(name, group)
             if info is None:
                 continue
@@ -1410,11 +1528,44 @@ class Game:
                     x += piece
                     src = 0
         self.screen.blits(jobs, doreturn=False)
+        if road_jobs:
+            self.screen.blits(road_jobs, doreturn=False)
         if self.concrete_texture is not None:
             for near_z, far_z in self.concrete_spans():
                 self.draw_concrete_joints(near_z, far_z)
         overlay, y_far = self.ground_fog_overlay()
         self.screen.blit(overlay, (0, y_far))
+
+    def final_flags(self) -> Optional[List[bool]]:
+        """Por trecho: já está na era final (chão de prado e pista de piso drenante)."""
+        if not getattr(self, "final_since", None) or not self.segments:
+            return None
+        return [self.segment_final(self.segment_base + i) > 0.0 for i in range(len(self.segments))]
+
+    def flag_at(self, z: float, flags: List[bool]) -> bool:
+        i = int((z - self.segments[0]) // 100.0)
+        return 0 <= i < len(flags) and flags[i]
+
+    def queue_road_row(self, jobs: list, y: int, z: float, group: int, distance: float, cam: float) -> None:
+        """Uma linha da pista com a textura de piso drenante (mesma técnica do chão das laterais)."""
+        info = self.ground_row_info("paver_road", group)
+        if info is None:
+            return
+        strip, tile_w, strip_w, tile_x, tile_z, tex_h = info
+        scale = FOV / z
+        left = max(0, int(WIDTH / 2 + (-ROAD_WIDTH / 2 - cam) * scale))
+        right = min(WIDTH, int(WIDTH / 2 + (ROAD_WIDTH / 2 - cam) * scale) + 1)
+        if right <= left:
+            return
+        origin = ((cam - (WIDTH / 2) * tile_x / tile_w) / tile_x) % 1.0 * tile_w
+        v = int((z + distance) / tile_z % 1.0 * tex_h)
+        x = left
+        src = int(origin + left) % tile_w
+        while x < right:
+            piece = min(strip_w - src, right - x)
+            jobs.append((strip, (x, y), (src, v, piece, 1)))
+            x += piece
+            src = 0
 
     def concrete_spans(self) -> List[Tuple[float, float]]:
         """Faixas de profundidade ainda de concreto (para as juntas das placas)."""
@@ -1451,7 +1602,7 @@ class Game:
 
     def warm_up_tasks(self):
         """Tarefas de preparo (reduções dos sprites e silhuetas), uma por vez."""
-        for name in ("back", "front", "trees"):
+        for name in ("back", "front", "trees", "city"):
             yield lambda name=name: self.skyline_base(name)
         for name in self.ground_textures:
             for group in sorted({g for _, _, g in self.ground_rows}):
@@ -1521,6 +1672,23 @@ class Game:
         return f"cor: {PLANE_COLORS[PLANE_COLOR_KEYS.index(self.plane_color_key)][1]}"
 
     @staticmethod
+    def load_game_mode() -> str:
+        try:
+            data = json.loads((user_data_dir() / CONFIG_FILENAME).read_text(encoding="utf-8"))
+            mode = data.get("modo", DEFAULT_GAME_MODE)
+        except (OSError, ValueError, TypeError, AttributeError):
+            return DEFAULT_GAME_MODE
+        return mode if mode in GAME_MODES else DEFAULT_GAME_MODE
+
+    def toggle_game_mode(self) -> None:
+        """Hangar (tecla M): alterna Normal/Difícil e salva a escolha."""
+        self.game_mode = "dificil" if self.game_mode == "normal" else "normal"
+        self.save_selection()
+
+    def speed_factor(self) -> float:
+        return NORMAL_SPEED_FACTOR if self.game_mode == "normal" else 1.0
+
+    @staticmethod
     def load_control_mode() -> str:
         try:
             data = json.loads((user_data_dir() / CONFIG_FILENAME).read_text(encoding="utf-8"))
@@ -1564,7 +1732,8 @@ class Game:
         try:
             path.write_text(
                 json.dumps({"aviao": self.plane_key, "piloto": self.pilot_key, "cores": self.plane_colors,
-                            "padroes": self.plane_patterns, "controle": self.control_mode},
+                            "padroes": self.plane_patterns, "controle": self.control_mode,
+                            "modo": self.game_mode},
                            ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
@@ -1617,7 +1786,7 @@ class Game:
         self.combo = 1
         self.combo_timer = 0.0
         self.streak = 0
-        self.speed = BASE_SPEED
+        self.speed = BASE_SPEED * self.speed_factor()
         self.game_over = False
         self.paused = False
         self.elapsed = 0.0
@@ -1646,7 +1815,12 @@ class Game:
         self.high_score_save_timer = 0.0
         self.spawn_counter = 0
         self.trash_counter = 0
+        self.trash_roll = 0
         self.obstacle_counters = {kind: 0 for kind in OBSTACLE_KINDS}
+        self.final_counters = {kind: 0 for kind in OBSTACLE_KINDS}
+        self.decor_x = [i * DECOR_CYCLE / max(1, len(FINAL_SKY_DECOR)) + 120 * i for i in range(len(FINAL_SKY_DECOR))]
+        self.tram_x = 0.0
+        self.birds_x = 300.0
         self.next_spawn_z = 520.0
         self.init_world()
 
@@ -1660,6 +1834,7 @@ class Game:
         self._restoration = float(value)
         self.visual_restoration = float(value)
         self.snap_green_segments()
+        self.snap_final_segments()
 
     @staticmethod
     def green_rank(seg: int) -> float:
@@ -1703,6 +1878,66 @@ class Game:
         if since is None:
             return 0.0
         return smoothstep((self.distance_travelled - since) / GREEN_GROW_DISTANCE)
+
+    # ------------------------------------------------------- era final por trechos
+    @staticmethod
+    def final_rank(seg: int) -> float:
+        """Ordem fixa (0..1) em que os trechos entram na era final (outra sequência que a verde)."""
+        return (seg * 0.7548776662466927 + 0.31) % 1.0
+
+    def final_share(self) -> float:
+        """Parcela dos trechos novos que chegam na era final (0 antes de FINAL_START_RESTORATION)."""
+        value = self.visual_restoration
+        if value < FINAL_START_RESTORATION:
+            return 0.0
+        return smoothstep((value - FINAL_START_RESTORATION) / FINAL_SWEEP_RESTORATION)
+
+    def snap_final_segments(self) -> None:
+        self.final_since: dict = {}
+        segments = getattr(self, "segments", None)
+        share = self.final_share()
+        if not segments or share <= 0.0:
+            return
+        base = getattr(self, "segment_base", 0)
+        for i in range(len(segments)):
+            if self.final_rank(base + i) < share:
+                self.final_since[base + i] = -1e12
+
+    def update_final_segments(self) -> None:
+        for seg in [s for s in self.final_since if s < self.segment_base]:
+            del self.final_since[seg]
+        share = self.final_share()
+        if share <= 0.0:
+            return
+        for i, z in enumerate(self.segments):
+            seg = self.segment_base + i
+            if z >= GREEN_CONVERT_Z and seg not in self.final_since and self.final_rank(seg) < share:
+                self.final_since[seg] = self.distance_travelled
+
+    def segment_final(self, seg: int) -> float:
+        """0 = era anterior, 1 = peça da era final crescida."""
+        since = self.final_since.get(seg)
+        if since is None:
+            return 0.0
+        return smoothstep((self.distance_travelled - since) / FINAL_GROW_DISTANCE)
+
+    def segment_at(self, z: float) -> Optional[int]:
+        if not self.segments:
+            return None
+        i = int((z - self.segments[0]) // 100.0)
+        return self.segment_base + i if 0 <= i < len(self.segments) else None
+
+    def final_at(self, z: float) -> bool:
+        """O trecho na profundidade z já está na era final."""
+        seg = self.segment_at(z)
+        return seg is not None and self.segment_final(seg) > 0.0
+
+    def spawn_is_final(self, z: float) -> bool:
+        """Entidade nova em z: usa os obstáculos da era final se o trecho dela vai chegar na era final."""
+        seg = self.segment_at(z)
+        if seg is None:
+            seg = self.segment_base + len(self.segments)
+        return seg in self.final_since or self.final_rank(seg) < self.final_share()
 
     def green_flags(self) -> Optional[List[bool]]:
         """Por trecho: o chão já é grama (junto com o início do crescimento da árvore)."""
@@ -1756,20 +1991,39 @@ class Game:
         if entity.collected:
             return
         entity.collected = True
-        value = 15 * self.combo
+        normal = self.game_mode == "normal"
+        value = NORMAL_TRASH_POINTS if normal else 15 * self.combo
         self.trash_cleaned += value
         self.wallet += value                     # carteira da loja: soma todas as partidas
         self.high_score_dirty = True
-        self.increase_restoration(2.1 + (0.25 if self.combo >= 4 else 0.0))
+        if normal:
+            self.increase_restoration(NORMAL_RESTORATION_PER_TRASH)
+        else:
+            self.increase_restoration(RESTORATION_PER_TRASH + (RESTORATION_COMBO_BONUS if self.combo >= 4 else 0.0))
         self.streak += 1
         self.combo_timer = 2.2
-        if self.streak % 4 == 0:
+        if self.streak % 4 == 0 and not normal:     # Normal: pontos fixos, sem combo
             self.combo = min(8, self.combo + 1)
         self.beams.append(Beam(entity.x, entity.z))
         self.floating.append(FloatingText(f"+{value}", entity.x, entity.y + 35.0))
         if self.trash_cleaned > self.high_score:
             self.high_score = self.trash_cleaned
             self.high_score_dirty = True
+
+    @property
+    def high_score(self) -> int:
+        """Recorde do modo atual."""
+        return self.high_scores.get(self.game_mode, 0)
+
+    @high_score.setter
+    def high_score(self, value: int) -> None:
+        self.high_scores[self.game_mode] = value
+
+    @staticmethod
+    def load_high_scores() -> dict:
+        paths = [save_file_path(), *legacy_save_paths()]
+        return {"dificil": max(_read_record(p) for p in paths),
+                "normal": max(_read_record(p, "recorde_normal") for p in paths)}
 
     @staticmethod
     def load_high_score() -> int:
@@ -1788,7 +2042,8 @@ class Game:
         temp_path = save_path.with_suffix(".tmp")
         try:
             temp_path.write_text(
-                json.dumps({"recorde": self.high_score, "pontos": self.wallet,
+                json.dumps({"recorde": self.high_scores.get("dificil", 0),
+                            "recorde_normal": self.high_scores.get("normal", 0), "pontos": self.wallet,
                             "padroes_comprados": sorted(self.owned_patterns - {"liso"})},
                            ensure_ascii=False, indent=2),
                 encoding="utf-8",
@@ -1816,8 +2071,8 @@ class Game:
                 self.lives += 1
                 label = "+1 VIDA"
             else:
-                self.increase_restoration(3.0)
-                label = "+3% ECO"
+                self.increase_restoration(REPAIR_RESTORATION)
+                label = f"+{REPAIR_RESTORATION:g}% ECO"
         self.floating.append(FloatingText(label, entity.x, entity.y + 48.0))
         self.start_maneuver(POWERUP_MANEUVERS.get(entity.kind))
 
@@ -1852,26 +2107,42 @@ class Game:
             self.spawn_pattern(self.next_spawn_z)
             self.next_spawn_z += random.choice([100.0, 120.0, 140.0])
 
-    def next_obstacle(self, kind: str) -> str:
+    def next_obstacle(self, kind: str, final: bool = False) -> str:
         """Modelos de cada tipo aparecem sempre na mesma ordem (não sorteados)."""
+        if final:
+            options = FINAL_OBSTACLE_SPECS[kind]
+            sprite = options[self.final_counters[kind] % len(options)].sprite
+            self.final_counters[kind] += 1
+            return sprite
         options = OBSTACLE_SPECS[kind]
         sprite = options[self.obstacle_counters[kind] % len(options)].sprite
         self.obstacle_counters[kind] += 1
         return sprite
 
+    def trash_allowed(self) -> bool:
+        """Modo Normal: só 1 de cada NORMAL_TRASH_EVERY lixos sorteados aparece (o Difícil mostra todos)."""
+        if self.game_mode != "normal":
+            return True
+        self.trash_roll += 1
+        return (self.trash_roll - 1) % NORMAL_TRASH_EVERY == 0
+
     def spawn_pattern(self, z: float) -> None:
         self.spawn_counter += 1
         trash_lane = random.choice([-1, 0, 1])
         trash_y = random.choice(TRASH_HEIGHTS)
-        self.entities.append(Entity(z, trash_lane, "trash", trash_y, TRASH_MODELS[self.trash_counter % len(TRASH_MODELS)]))
-        self.trash_counter += 1
+        if self.trash_allowed():
+            self.entities.append(Entity(z, trash_lane, "trash", trash_y,
+                                        TRASH_MODELS[self.trash_counter % len(TRASH_MODELS)]))
+            self.trash_counter += 1
 
         available = [-1, 0, 1]
         available.remove(trash_lane)
         if random.random() < 0.45:
-            self.entities.append(Entity(z + 45, random.choice(available), "trash", random.choice(TRASH_HEIGHTS),
-                                        TRASH_MODELS[self.trash_counter % len(TRASH_MODELS)]))
-            self.trash_counter += 1
+            lane2, y2 = random.choice(available), random.choice(TRASH_HEIGHTS)
+            if self.trash_allowed():
+                self.entities.append(Entity(z + 45, lane2, "trash", y2,
+                                            TRASH_MODELS[self.trash_counter % len(TRASH_MODELS)]))
+                self.trash_counter += 1
 
         difficulty = clamp(self.elapsed / 180.0, 0.0, 1.0)
         obstacle_probability = 0.35 + difficulty * 0.30
@@ -1879,7 +2150,8 @@ class Game:
             obstacle_lane = random.choice(available)
             roll = random.random()
             kind = "low" if roll < 0.45 else ("gate" if roll < 0.75 else "tower")
-            self.entities.append(Entity(z, obstacle_lane, kind, 0.0, self.next_obstacle(kind)))
+            final = self.spawn_is_final(z)
+            self.entities.append(Entity(z, obstacle_lane, kind, 0.0, self.next_obstacle(kind, final)))
 
         if random.random() < 0.13:
             powerup_lane = random.choice([-1, 0, 1])
@@ -2136,6 +2408,8 @@ class Game:
             self.open_paint_shop()
         elif key == pygame.K_v:
             self.toggle_control_mode()
+        elif key == pygame.K_m:
+            self.toggle_game_mode()
         elif key == pygame.K_r and self.webcam is not None:
             self.webcam.restart_calibration()           # recalibra a posição de repouso
 
@@ -2270,9 +2544,11 @@ class Game:
         self.update_maneuver(dt)
         self.ease_visual_restoration(dt)
         self.update_green_segments()
+        self.update_final_segments()
+        self.update_decor(dt)
         difficulty = clamp(self.elapsed / 180.0, 0.0, 1.0)
         self.speed = (BASE_SPEED + self.restoration * RESTORATION_SPEED_GAIN
-                      + difficulty * DIFFICULTY_SPEED_GAIN)
+                      + difficulty * DIFFICULTY_SPEED_GAIN) * self.speed_factor()
         self.distance_travelled += self.speed * dt
         self.update_combo(dt)
         self.update_flight(dt)
@@ -2285,6 +2561,7 @@ class Game:
         while self.segments and self.segments[0] < -40:
             self.segments.pop(0)
             self.segment_base += 1
+            self.final_since.pop(self.segment_base - 1, None)   # trecho descartado sai da era final
             last = self.segments[-1] if self.segments else 100.0
             new_z = last + 100.0
             self.segments.append(new_z)
@@ -2336,6 +2613,8 @@ class Game:
             return
         if screen_h < 100:
             screen_h -= screen_h % 2   # objetos pequenos/distantes: menos reescalas, diferença invisível
+        elif key[0] in ("final", "fx"):
+            screen_h -= screen_h % max(2, screen_h // 40)   # era final (sprites grandes): degraus de ~2,5%
         aspect = sprite.get_width() / max(1, sprite.get_height())
         screen_w = max(2, int(screen_h * aspect))
         left = int(sx) - screen_w // 2
@@ -2416,7 +2695,7 @@ class Game:
         sx, sy, scale = self.project(side * x, 0, z, cam)
         width = max(2, int(95 * scale))
         height = max(2, int(250 * scale * scale_h))
-        body = lerp_color(rgb("26201d") if self.visual_restoration < 25 else rgb("191c26"), self.fog_color,
+        body = lerp_color(rgb("26201d") if self.visual_restoration < POLLUTION_CLEAR_START else rgb("191c26"), self.fog_color,
                           self.fog_level(z) / FOG_LEVELS)
         pygame.draw.rect(self.screen, body, (int(sx - width / 2), int(sy - height), width, height))
 
@@ -2429,21 +2708,45 @@ class Game:
         margin_cam = self.cam_x * MARGIN_PARALLAX
         border_z = z + 50.0
         g_mid = g_border = self.segment_green(seg)
+        f = self.segment_final(seg) if self.final_sprites else 0.0
+        keep = 1.0 - f                   # a peça da era anterior afunda enquanto a nova cresce
         for side in (-1, 1):
-            if g_mid < 1.0:
+            if g_mid < 1.0 and keep > 0.0:
                 self.draw_industrial(MID_ROW_SPECS, seg, side, MID_ROW_X, z, mid_cam,
-                                     fallback=seg % 2 == 0, scale_h=1.0 - g_mid)
-            if g_mid > 0.0:
-                self.draw_tree(seg, side, MID_ROW_X, z, 1.0, mid_cam, grow=g_mid)
+                                     fallback=seg % 2 == 0, scale_h=(1.0 - g_mid) * keep)
+            if g_mid > 0.0 and keep > 0.0:
+                self.draw_tree(seg, side, MID_ROW_X, z, 1.0, mid_cam, grow=g_mid * keep)
+            if f > 0.0:
+                self.draw_final_piece(self.final_mid_spec(seg, side), side, MID_ROW_X, z, mid_cam, f)
             if border_z > MARGIN_MAX_Z:
                 continue   # peças pequenas da borda: invisíveis tão longe, na neblina
             if (seg + (side > 0)) % 2:
                 continue   # borda alterna de lado a cada trecho: menos peças, mesma continuidade
-            if g_border < 1.0:
+            if g_border < 1.0 and keep > 0.0:
                 self.draw_industrial(MARGIN_PROP_SPECS, seg // 2, side, MARGIN_X, border_z, margin_cam,
-                                     fallback=False, scale_h=1.0 - g_border)
-            if g_border > 0.0:
-                self.draw_tree(seg + 3, side, MARGIN_X, border_z, 0.45, margin_cam, grow=g_border)
+                                     fallback=False, scale_h=(1.0 - g_border) * keep)
+            if g_border > 0.0 and keep > 0.0:
+                self.draw_tree(seg + 3, side, MARGIN_X, border_z, 0.45, margin_cam, grow=g_border * keep)
+            if f > 0.0:
+                spec = FINAL_MARGIN_SPECS[(seg // 2 + (3 if side > 0 else 0)) % len(FINAL_MARGIN_SPECS)]
+                self.draw_final_piece(spec, side, MARGIN_X, border_z, margin_cam, f)
+
+    @staticmethod
+    def final_mid_spec(seg: int, side: int) -> Tuple[str, float]:
+        """Peça da camada média da era final (ordem fixa; marco em 1 de cada FINAL_MARCO_A_CADA trechos)."""
+        if seg % FINAL_MARCO_A_CADA == 4 and (seg // FINAL_MARCO_A_CADA + (side > 0)) % 2 == 0:
+            return FINAL_MARCO
+        offset = len(FINAL_MID_SPECS) // 2 if side > 0 else 0
+        return FINAL_MID_SPECS[(seg + offset) % len(FINAL_MID_SPECS)]
+
+    def draw_final_piece(self, spec: Tuple[str, float], side: int, x: float, z: float,
+                         cam: float, grow: float) -> None:
+        name, height = spec
+        sprite = self.final_sprites.get(name)
+        if sprite is None or z < NEAR_CLIP_Z or grow < 0.04:
+            return
+        # O sprite foi renderizado de 3/4 mostrando o lado direito: à direita da pista ele é espelhado.
+        self.blit_world_sprite(sprite, ("final", name), side * x, 0, z, height * grow, side > 0, cam=cam)
 
     def draw_world(self) -> None:
         a, b, t = self.visual_stage_pair()
@@ -2477,12 +2780,20 @@ class Game:
         self.draw_ground()
 
         # 3ª passada: pista, faixas e margens, do fundo para a frente.
+        paver = "paver_road" in self.ground_textures
         for seg, z, next_z, left1, right1, left2, right2, haze in stretches:
             raw_color = road_even if seg % 2 == 0 else road_odd
             base_color = lerp_color(raw_color, purified_road, self.purify_amount(z, wave_z))
             local_color = lerp_color(base_color, fog, haze)
             lane_line = lerp_color(lane_base, fog, haze)
-            pygame.draw.polygon(self.screen, local_color, [(left1[0], left1[1]), (right1[0], right1[1]), (right2[0], right2[1]), (left2[0], left2[1])])
+            if paver and self.segment_final(seg) > 0.0:
+                # Pista de piso drenante (textura desenhada em draw_ground) com meio-fio dourado.
+                curb = lerp_color(FINAL_CURB_COLOR, fog, haze)
+                width = max(1, int(6 * left1[2]))
+                pygame.draw.line(self.screen, curb, (left1[0], left1[1]), (left2[0], left2[1]), width)
+                pygame.draw.line(self.screen, curb, (right1[0], right1[1]), (right2[0], right2[1]), width)
+            else:
+                pygame.draw.polygon(self.screen, local_color, [(left1[0], left1[1]), (right1[0], right1[1]), (right2[0], right2[1]), (left2[0], left2[1])])
 
             for divider in (-0.5, 0.5):
                 p1 = self.project(LANE_WIDTH * divider, 0, z)
@@ -2508,10 +2819,50 @@ class Game:
             self.shadow_cache[key] = shadow
         self.screen.blit(shadow, shadow.get_rect(center=(int(sx), int(sy))))
 
+    def draw_collectible_halo(self, entity: Entity, size: float) -> None:
+        """Era final, só no Difícil: halo ciano-dourado pulsante atrás de tudo que se pode PEGAR.
+
+        O modo Normal não tem brilho (o brilho fica reservado a uma mecânica do Difícil)."""
+        if self.game_mode != "dificil":
+            return
+        halo = self.final_fx.get("halo_coletavel")
+        if halo is None or not self.final_at(entity.z):
+            return
+        pulse = (0.94, 1.0, 1.06)[int(self.elapsed * 4.0 + entity.z * 0.01) % 3]
+        h = size * FINAL_HALO_SCALE * pulse
+        self.blit_world_sprite(halo, ("fx", "halo"), entity.x, entity.y - h / 2, entity.z + 1.0, h)
+
+    def draw_obstacle_alert(self, entity: Entity, spec: ObstacleSpec) -> None:
+        """Era final: chevrons âmbar pintados no chão da faixa antes de tudo que COLIDE."""
+        alert = self.final_fx.get("alerta_chao")
+        if alert is None:
+            return
+        near, far = entity.z - FINAL_ALERT_DEPTH[1], entity.z - FINAL_ALERT_DEPTH[0]
+        if near < NEAR_CLIP_Z or self.fog_level(far) >= FOG_LEVELS:
+            return
+        half = min(spec.width, LANE_WIDTH) * 0.42
+        x0, y_far, _ = self.project(entity.x - half, 0, far)
+        x1, _, _ = self.project(entity.x + half, 0, far)
+        x2, y_near, _ = self.project(entity.x - half, 0, near)
+        x3, _, _ = self.project(entity.x + half, 0, near)
+        w, h = int(max(x1 - x0, x3 - x2)), int(y_near - y_far)
+        if w < 4 or h < 2 or w > WIDTH * 2:
+            return
+        # Tamanho em degraus de ~5%: o chevron reaproveita a mesma redução por vários quadros.
+        step = max(2, int(w * 0.05))
+        size = (w - w % step + step, max(2, h - h % max(2, int(h * 0.05)) + 2))
+        scaled = self.scaled_sprite(alert, ("fx", "alerta"), size)
+        level = self.fog_level(far)
+        if level > 0:
+            scaled = self.fogged_sprite(scaled, (("fx", "alerta"), size, False), level)
+        self.screen.blit(scaled, (int((x2 + x3) / 2 - size[0] / 2), int(y_far)))
+
     def draw_entity(self, entity: Entity, wave_z: float) -> None:
         x, y, scale = self.project(entity.x, entity.y, entity.z)
         scale = max(0.08, scale)
         purified = entity.z <= wave_z
+        if entity.kind == "trash" or entity.kind in POWERUP_KINDS:
+            self.draw_collectible_halo(entity, 46.0 if entity.kind == "trash" else 56.0)
         if entity.kind == "trash":
             self.draw_ground_shadow(entity.x, entity.y, entity.z, 50, 70)
             sprite = self.trash_sprites.get(entity.sprite)
@@ -2536,7 +2887,10 @@ class Game:
                 pygame.draw.circle(self.screen, rgb("fff8e1"), (int(x), int(y)), radius, max(1, int(2 * scale)))
         elif entity.kind in OBSTACLE_KINDS:
             spec = obstacle_spec(entity)
-            sprite = self.side_prop_sprites.get(spec.sprite)
+            final = is_final_obstacle(entity)
+            if final:
+                self.draw_obstacle_alert(entity, spec)
+            sprite = (self.final_sprites if final else self.side_prop_sprites).get(spec.sprite)
             if sprite is not None:
                 self.blit_world_sprite(sprite, ("obstacle", spec.sprite), entity.x, 0, entity.z, spec.visual_height)
             else:
@@ -2727,7 +3081,9 @@ class Game:
         pygame.draw.rect(self.screen, stage.accent, (18, 38, int(510 * self.restoration / 100), 12))
         self.screen.blit(self.small_font.render(stage.name, True, rgb("c5e1c7")), (18, 57))
         self.screen.blit(
-            self.small_font.render(f"RECORDE: {self.high_score:,}   COMBO x{self.combo}", True, rgb("fff59d")),
+            self.small_font.render(
+                f"RECORDE: {self.high_score:,}   COMBO x{self.combo}   DIFÍCIL" if self.game_mode == "dificil"
+                else f"RECORDE: {self.high_score:,}   MODO NORMAL", True, rgb("fff59d")),
             (18, 76),
         )
 
@@ -2742,6 +3098,70 @@ class Game:
         magnet = f"IMÃ {math.ceil(self.magnet_timer)}s" if self.magnet_timer > 0 else "IMÃ --"
         self.screen.blit(self.small_font.render(f"{shield}   {magnet}", True, rgb("b3e5fc")), (806, 47))
         self.screen.blit(self.small_font.render("F3: hitboxes | P/ESC: pausa", True, rgb("c5e1c7")), (806, 68))
+
+    # ------------------------------------------------------------ decoração móvel
+    def update_decor(self, dt: float) -> None:
+        """Dirigível, balões, bonde e pássaros andam sozinhos (só visual, não colidem)."""
+        for i, (_, _, _, speed, _) in enumerate(FINAL_SKY_DECOR):
+            self.decor_x[i] = (self.decor_x[i] + speed * dt) % DECOR_CYCLE
+        self.tram_x = (self.tram_x - FINAL_TRAM[2] * dt) % DECOR_CYCLE
+        self.birds_x = (self.birds_x + 32.0 * dt) % DECOR_CYCLE
+
+    def decor_sprite(self, name: str, height: int, alpha: int, haze: float = 0.0) -> Optional[pygame.Surface]:
+        sprite = self.final_sprites.get(name)
+        if sprite is None or height < 2:
+            return None
+        fog = tuple(c // 16 * 16 for c in self.fog_color)
+        key = (name, height, alpha // 32, int(haze * 10), fog if haze else None)
+        cached = self.decor_cache.get(key)
+        if cached is None:
+            if len(self.decor_cache) > 64:
+                self.decor_cache.clear()
+            w = max(2, int(sprite.get_width() * height / sprite.get_height()))
+            cached = pygame.transform.smoothscale(sprite, (w, height))
+            if haze:
+                keep = int(255 * (1.0 - haze))
+                cached.fill((keep, keep, keep, 255), special_flags=pygame.BLEND_RGBA_MULT)
+                cached.fill((int(fog[0] * haze), int(fog[1] * haze), int(fog[2] * haze), 0),
+                            special_flags=pygame.BLEND_RGBA_ADD)
+            if alpha < 255:
+                cached.fill((255, 255, 255, alpha // 32 * 32 + 31), special_flags=pygame.BLEND_RGBA_MULT)
+            self.decor_cache[key] = cached
+        return cached
+
+    def draw_sky_decor(self) -> None:
+        """Camada do céu: dirigível solar e balões cruzando devagar, mais pássaros."""
+        amount = self.final_share()
+        if amount <= 0.0 or not self.final_sprites:
+            return
+        alpha = int(255 * amount)
+        for i, (name, top, height, _, par) in enumerate(FINAL_SKY_DECOR):
+            surf = self.decor_sprite(name, height, alpha, haze=0.15)
+            if surf is None:
+                continue
+            x = (self.decor_x[i] - self.cam_x * par) % DECOR_CYCLE - 350
+            self.screen.blit(surf, (int(x), top))
+        bx = (self.birds_x - self.cam_x * 0.2) % DECOR_CYCLE - 350
+        color = lerp_color(rgb("37474f"), self.fog_color, 0.25)
+        for k in range(FINAL_BIRDS):
+            px = bx + k * 17 - (k % 2) * 6
+            py = 150 + abs(k - FINAL_BIRDS // 2) * 6 + math.sin(self.elapsed * 1.3 + k) * 2
+            flap = math.sin(self.elapsed * 9.0 + k * 1.7) * 3.0
+            pygame.draw.lines(self.screen, color, False,
+                              [(px - 5, py - 2 - flap), (px, py), (px + 5, py - 2 - flap)], 2)
+
+    def draw_horizon_decor(self) -> None:
+        """Na linha do horizonte, à frente das silhuetas: o bonde VLT passando."""
+        amount = self.final_share()
+        if amount <= 0.0 or not self.final_sprites:
+            return
+        name, height, _, par = FINAL_TRAM
+        surf = self.decor_sprite(name, height, int(255 * amount), haze=0.35)
+        if surf is None:
+            return
+        for k in range(2):
+            x = (self.tram_x + k * DECOR_CYCLE / 2 - self.cam_x * par) % DECOR_CYCLE - 350
+            self.screen.blit(surf, (int(x), HORIZON_Y - height + 3))
 
     def draw_far_layer(self, base: Color) -> None:
         """Camada distante: silhueta do horizonte que desliza devagar (paralaxe)."""
@@ -2766,6 +3186,8 @@ class Game:
         self.draw_sky_panorama()
         self.draw_clouds()
         self.draw_skyline(horizon)
+        self.draw_sky_decor()        # na frente das silhuetas distantes, atrás dos prédios da camada média
+        self.draw_horizon_decor()
         # Chão até o horizonte na cor da neblina: emenda suave com o fim da pista.
         pygame.draw.rect(self.screen, self.fog_color, (0, HORIZON_Y, WIDTH, HEIGHT - HORIZON_Y))
         self.draw_world()
@@ -2792,6 +3214,7 @@ class Game:
             self.screen.blit(scaled, scaled.get_rect(center=(card.centerx, int(card.centery + bob))))
         else:
             self.draw_paper_plane_fallback(card.centerx, card.centery, 360)
+        self.draw_mode_badge(card)
 
         arrow = self.title_font.render("◀", True, accent), self.title_font.render("▶", True, accent)
         self.screen.blit(arrow[0], arrow[0].get_rect(center=(card.left - 34, card.centery)))
@@ -2807,19 +3230,19 @@ class Game:
             hints = [
                 "Mão para os lados: trocar avião     Mão para cima: trocar piloto",
                 "Mão levantada: decolar     Mão para baixo: oficina de pintura",
-                f"R: recalibrar     V: trocar o controle     Recorde: {self.high_score:,}     "
+                f"R: recalibrar     V: trocar o controle     M: modo     Recorde: {self.high_score:,}     "
                 f"Pontos: {self.points_text(self.wallet)}",
             ]
         elif self.control_mode == "camera":
             hints = [
                 "Corpo ← / →: trocar avião     Corpo ↑ / ↓: trocar piloto",
                 "Mão direita levantada: decolar     Mão esquerda levantada: oficina de pintura",
-                f"R: recalibrar     V: trocar o controle     Recorde: {self.high_score:,}     "
+                f"R: recalibrar     V: trocar o controle     M: modo     Recorde: {self.high_score:,}     "
                 f"Pontos: {self.points_text(self.wallet)}",
             ]
         else:
             hints = [
-                "← / → ou A / D: trocar avião     ↑ / ↓ ou W / S: trocar piloto",
+                "← / → ou A / D: trocar avião     ↑ / ↓ ou W / S: trocar piloto     M: Normal / Difícil",
                 f"C: oficina de pintura ({self.paint_label()})     V: controle por câmera (corpo ou uma mão)",
                 f"ENTER ou ESPAÇO: decolar          Recorde: {self.high_score:,}     "
                 f"Pontos para a loja: {self.points_text(self.wallet)}",
@@ -2831,6 +3254,16 @@ class Game:
             self.screen.blit(self.webcam_surface, self.webcam_surface.get_rect(topright=(WIDTH - 24, 96)))
             pygame.draw.rect(self.screen, rgb("c5e1c7"),
                              self.webcam_surface.get_rect(topright=(WIDTH - 24, 96)), 1)
+
+    def draw_mode_badge(self, card: pygame.Rect) -> None:
+        """Hangar: modo escolhido no canto do cartão do avião (M troca)."""
+        hard = self.game_mode == "dificil"
+        color = rgb("ffab91") if hard else rgb("a5d6a7")
+        text = self.small_font.render(f"MODO {GAME_MODE_LABELS[self.game_mode].upper()}   (M: trocar)", True, color)
+        box = text.get_rect(topleft=(card.left + 16, card.top + 14)).inflate(18, 10)
+        pygame.draw.rect(self.screen, (12, 24, 18), box, border_radius=8)
+        pygame.draw.rect(self.screen, color, box, 2, border_radius=8)
+        self.screen.blit(text, text.get_rect(center=box.center))
 
     @staticmethod
     def points_text(value: int) -> str:
@@ -3002,7 +3435,8 @@ class Game:
         elif self.game_over:
             self.draw_overlay(
                 "FIM DE JOGO",
-                f"Resíduos coletados: {self.trash_cleaned:,}   Recorde: {self.high_score:,}   "
+                f"Resíduos coletados: {self.trash_cleaned:,}   "
+                f"Recorde ({GAME_MODE_LABELS[self.game_mode]}): {self.high_score:,}   "
                 f"Pontos na carteira: {self.points_text(self.wallet)}",
                 "ENTER ou ESPAÇO: voar de novo   |   C: trocar avião no hangar"
                 + {"mao": "   |   Mão levantada: voar de novo   Mão para baixo: hangar",
@@ -3094,6 +3528,8 @@ def run_self_test(frames: int) -> int:
         "plane_menu_sprites": len(game.plane_menu_sprites),
         "scenario_sprites": len(game.scenario_sprites),
         "skyline_sprites": len(game.skyline_sprites),
+        "era_final_sprites": len(game.final_sprites),
+        "era_final_fx": len(game.final_fx),
         "atmosphere": {"sky_panorama": game.sky_panorama is not None, "clouds": len(game.clouds)},
         "window_size": list(game.screen.get_size()),
         "fps_limit": FPS,

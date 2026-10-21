@@ -64,26 +64,48 @@ cor volta ao liso.
 Cada avião lembra a sua cor e o seu padrão. ENTER, ESPAÇO ou C confirmam e salvam a escolha em
 `eco_runner_config.json` (chaves `cores` e `padroes`); ESC cancela e volta à pintura anterior.
 
+### Modos de jogo: Normal e Difícil
+
+No hangar, **M** alterna entre os dois modos; a escolha aparece no canto do cartão do avião e fica salva
+(chave `modo` em `eco_runner_config.json`). Quem nunca escolheu começa no **Normal**.
+
+| | Normal | Difícil (o jogo original) |
+|---|---|---|
+| Lixo na pista | 1 a cada 4 (`NORMAL_TRASH_EVERY`) | todos |
+| Pontos por lixo | 65 fixos, sem combo (`NORMAL_TRASH_POINTS`) | 15 × combo |
+| Restauração por lixo | 11,2 (`NORMAL_RESTORATION_PER_TRASH`) | 1,4 (+0,15 com combo ≥ 4) |
+| Velocidade | metade (`NORMAL_SPEED_FACTOR` 0,5) | normal |
+| Brilho nos coletáveis da era final | não | sim |
+| Recorde | `recorde_normal` | `recorde` |
+
+Obstáculos e power-ups aparecem na mesma proporção nos dois modos. Como no Normal há 4× menos lixo por
+distância e o avião anda na metade da velocidade (8× menos lixo por segundo), cada lixo restaura 8× mais:
+as 3 eras chegam em tempo parecido com o Difícil (~3 lixos por era). Os pontos dos dois modos somam na
+mesma carteira da loja. O brilho dos coletáveis fica só no Difícil, reservado para uma mecânica futura.
+
 ### Eras
 
-**Quatro eras**, trocadas conforme a restauração ambiental aumenta:
+**Três eras**, trocadas conforme a restauração ambiental aumenta:
 
 | Era | Restauração necessária |
 |---|---|
 | Era I: Dieselpunk Industrial | a partir de 0% (início) |
-| Era II: Poluição Corporativa | 25% |
-| Era III: Despertar Ecológico | 50% |
-| Era IV: Solarpunk Art Nouveau | 75% |
+| Era II: Despertar Ecológico | 33,3% |
+| Era III: Solarpunk Art Nouveau (cidade EcoUrbe) | 66,7% |
+
+São 3 eras com o mesmo espaçamento (`ERA_SPAN` = 100/3). No Difícil, cada lixo restaura 1,4 ponto
+(`RESTORATION_PER_TRASH`; +0,15 com combo ≥ 4) e o reparo com vidas cheias, 2 pontos:
+cerca de 24 lixos por era. A antiga era "Poluição Corporativa" (25%) foi removida em 21/10/2026.
 
 ### Restauração, coleta, combo e vidas
 
-**Restauração**: começa em 5%, com teto de 100%. Cada lixo coletado soma +2,1%
-(+2,35% quando o combo está em x4 ou mais).
+**Restauração**: começa em 5%, com teto de 100%. No Difícil, cada lixo coletado soma +1,4%
+(+1,55% quando o combo está em x4 ou mais); no Normal, +11,2%.
 
-**Coleta de lixo**: cada lixo vale 15 pontos × o combo atual. O lixo é coletado ao encostar no avião,
+**Coleta de lixo**: no Difícil, cada lixo vale 15 pontos × o combo atual; no Normal, 65 pontos fixos. O lixo é coletado ao encostar no avião,
 ou pelo ímã (ver power-ups).
 
-**Combo**: a cada 4 lixos coletados em sequência, o combo sobe 1, até x8.
+**Combo** (só no Difícil): a cada 4 lixos coletados em sequência, o combo sobe 1, até x8.
 O combo zera ao bater em um obstáculo ou quando passam 2,2 s sem coletar lixo.
 
 **Vidas**: 3. Ao bater em um obstáculo, o jogador perde uma vida, fica invulnerável por
@@ -134,14 +156,14 @@ continua onde está para fins de jogo.
 
 | Elemento | Modelos | Onde aparecem |
 |---|---|---|
-| Props Dieselpunk | 01 Fábrica, 02 Chaminé, 03 Caldeira, 04 Rede de tubos com válvula, 05 Tambores, 06 Monte de lixo, 07 Pilha de sucata, 08 Caçamba | Fileira de fundo das margens nas eras I e II, intercalados com as estruturas do kit. A caçamba saiu dessa fileira, trocada pela caixa industrial do guia (ver a linha seguinte); ela continua como obstáculo. Chaminé, caldeira, tubos, tambores, monte de lixo, sucata e caçamba também são obstáculos (tabela acima). A fábrica aparece só na margem. |
+| Props Dieselpunk | 01 Fábrica, 02 Chaminé, 03 Caldeira, 04 Rede de tubos com válvula, 05 Tambores, 06 Monte de lixo, 07 Pilha de sucata, 08 Caçamba | Fileira de fundo das margens na Era I (e onde a Era II ainda não chegou), intercalados com as estruturas do kit. A caçamba saiu dessa fileira, trocada pela caixa industrial do guia (ver a linha seguinte); ela continua como obstáculo. Chaminé, caldeira, tubos, tambores, monte de lixo, sucata e caçamba também são obstáculos (tabela acima). A fábrica aparece só na margem. |
 | Kit Dieselpunk_Scenario | 28 modelos de `modelos_3d/Dieselpunk_Scenario` | Eras I e II. Fileira junto à pista: tambor de combustível, caixa, carretel de cabo, painel de controle, tubos de vapor, gerador, compressor, passarela e luz âmbar. Fileira de fundo: torre industrial, guindaste, silo, chaminé, tanque de pressão, paredes de fábrica, elevador de carga, ventilador, escada, suporte, portão de hangar, torre de energia e fábrica distante. |
-| Peças do guia | `SCN_CaixaIndustrial_Cenario`, `SCN_Galpao_Restaurado` e `SCN_TorreChamine_Restaurada` (pasta `scenario_sprites/`) | Caixa industrial: fileira de fundo das eras I e II, no lugar da caçamba. Galpão e torre restaurados: fileira de fundo das eras III e IV (restauração de 50% ou mais), em 1 trecho a cada 6, no lugar de uma árvore. |
+| Peças do guia | `SCN_CaixaIndustrial_Cenario`, `SCN_Galpao_Restaurado` e `SCN_TorreChamine_Restaurada` (pasta `scenario_sprites/`) | Caixa industrial: fileira de fundo da Era I, no lugar da caçamba. Galpão e torre restaurados: fileira de fundo da Era II (restauração de 33,3% ou mais), em 1 trecho a cada 6, no lugar de uma árvore. |
 | Silhuetas do horizonte | silo, fábrica distante, torre de energia, torre industrial, chaminé, guindaste, tanque e elevador do kit; árvores Solarpunk 01 a 10 | Horizonte, em duas fileiras. As silhuetas industriais viram árvores conforme a restauração sobe. |
 | Céu e nuvens | panorama de céu poluído e nuvem de fumaça do kit | Céu das eras poluídas. Somem aos poucos com a restauração, dando lugar ao céu da era e a nuvens claras. |
-| Árvores Solarpunk | 01 a 10 | Margens das eras III e IV, com restauração de 50% ou mais, nos trechos já purificados: na fileira de fundo e, menores, na borda da pista. Fora deles, a margem mostra os modelos industriais. |
-| Grama | textura gerada por `tools/make_grass_texture.py` | Chão fora da pista nas eras III e IV, a partir de 50% de restauração, do avião até a frente de restauração: o mesmo trecho em que as árvores aparecem. Além dela, concreto sujo. |
-| Concreto sujo | textura gerada por `tools/make_concrete_texture.py` | Chão fora da pista em toda a fase inicial (eras I e II) e, a partir de 50%, além da frente de restauração. |
+| Árvores Solarpunk | 01 a 10 | Margens da Era II, com restauração de 33,3% ou mais (na Era III dão lugar aos modelos EcoUrbe), nos trechos já purificados: na fileira de fundo e, menores, na borda da pista. Fora deles, a margem mostra os modelos industriais. |
+| Grama | textura gerada por `tools/make_grass_texture.py` | Chão fora da pista nas eras II e III, a partir de 33,3% de restauração, do avião até a frente de restauração: o mesmo trecho em que as árvores aparecem. Além dela, concreto sujo. |
+| Concreto sujo | textura gerada por `tools/make_concrete_texture.py` | Chão fora da pista em toda a Era I e, a partir de 33,3%, além da frente de restauração. |
 | Lixo coletável | 4 modelos de lixo (lista em `trash_sprites/`, abaixo) | Pista, em três alturas |
 | Aviões | 11 modelos do Estúdio (lista na seção Avião e piloto) | Hangar e voo |
 | Power-ups | escudo, ímã e reparo (sprites em `powerup_sprites/`) | Pista |
@@ -183,7 +205,7 @@ cerca de 11 ms (9 ms antes do cenário novo), com bem mais objetos na tela.
 óleo, rachaduras, fuligem e pontos de ferrugem. As juntas paralelas à pista são desenhadas em perspectiva
 e a textura desliza junto com a pista, como a grama.
 
-**Grama**: a partir de 50% de restauração, o chão fora da pista vira grama com textura (tufos, manchas
+**Grama**: a partir de 33,3% de restauração, o chão fora da pista vira grama com textura (tufos, manchas
 claras e escuras e pequenas flores) desde o avião até a frente de restauração, onde as árvores começam.
 Uma linha escura marca essa borda. A grama é desenhada em perspectiva, desliza junto com a pista e
 acompanha a câmera como a pista. Quanto mais a restauração sobe, mais longe a grama chega.
@@ -208,6 +230,7 @@ Os valores podem ser ajustados (ver "Ajustar câmera, paralaxe e velocidade").
 | Abrir a Oficina de pintura | C |
 | Trocar o controle: teclado → corpo → uma mão | V |
 | Recalibrar a câmera | R |
+| Alternar o modo Normal / Difícil | M |
 | Decolar | ENTER ou ESPAÇO |
 
 ### Na Oficina de pintura
@@ -393,9 +416,11 @@ O jogo pode gerar o modelo Art Nouveau da árvore fotovoltaica em formato OBJ/MT
 
 Arquivos gerados nessa pasta:
 
-- `eco_runner_recorde.json`: o recorde.
+- `eco_runner_recorde.json`: os recordes (`recorde` = Difícil, `recorde_normal` = Normal), a carteira da
+  loja (`pontos`) e os padrões comprados.
 - `eco_runner_config.json`: o avião e o piloto escolhidos no hangar (chaves `aviao` e `piloto`), a cor
-  e o padrão de pintura de cada avião (chaves `cores` e `padroes`).
+  e o padrão de pintura de cada avião (chaves `cores` e `padroes`), o controle (`controle`) e o modo
+  de jogo (`modo`: `normal` ou `dificil`).
 - `eco_runner_erro.log`: detalhes técnicos quando o jogo fecha por erro inesperado.
   A mensagem de erro indica esse arquivo.
 - `self_test.json`: relatório do `--self-test`.
@@ -501,10 +526,35 @@ o spec a copia para o pacote, mas o código não a carrega.
 ## Transição de cenário suavizada (21/10/2026)
 
 - O cenário (cores do céu e da pista, poluição, chão e margens) segue a restauração aos poucos: cada lixo coletado soma na hora no placar, mas o desenho alcança o valor em cerca de 3 s (`VISUAL_RESTORATION_TIME` = 2,8 s), sem degrau a cada coleta. Velocidade, placar e nome da era usam o valor real.
-- A era verde chega **do horizonte para o avião**: a partir de 50% (no valor do cenário), os trechos de pista que entram lá longe, na neblina (além de `GREEN_CONVERT_Z`), passam a vir restaurados. A parcela de trechos restaurados sobe de 0 a 100% entre 50% e 80% (`GREEN_SWEEP_RESTORATION` = 30 pontos), espalhada ao longo da pista. Os trechos que já estavam perto continuam como estão até passar pelo avião; nada vira verde de repente na frente do jogador.
+- A era verde chega **do horizonte para o avião**: a partir de 33,3% (no valor do cenário), os trechos de pista que entram lá longe, na neblina (além de `GREEN_CONVERT_Z`), passam a vir restaurados. A parcela de trechos restaurados sobe de 0 a 100% entre 33,3% e 63,3% (`GREEN_SWEEP_RESTORATION` = 30 pontos), espalhada ao longo da pista. Os trechos que já estavam perto continuam como estão até passar pelo avião; nada vira verde de repente na frente do jogador.
 - Num trecho restaurado, a peça industrial afunda no chão e a árvore cresce enquanto o trecho vem chegando (`GREEN_GROW_DISTANCE`, cerca de 2 s); o chão do trecho vira grama junto.
 - A pista passa da cor suja para a purificada com gradiente (`ROAD_PURIFY_BAND`), e as silhuetas do horizonte trocam com fade de 0,6 s (`SKYLINE_FADE_S`).
 - Backup: pasta `eco_runner_backup_antes_transicao_20261021` (estado antes da primeira suavização) e `eco_runner_backup_transicao_etapa1_20261021` (primeira suavização, com o verde saindo da câmera), ao lado da pasta do jogo.
+
+## Era final: cidade EcoUrbe Solarpunk (21/10/2026)
+
+A última era (Era III desde a redução para 3 eras; restauração ≥ 66,7%) é a fase completa da cidade.
+Ela chega por trechos, do horizonte para o avião, como a varredura verde (`FINAL_START_RESTORATION` =
+2 × `ERA_SPAN`, `FINAL_SWEEP_RESTORATION` 10: em 76,7% todos os trechos novos já chegam na era final).
+A grama e as árvores começam no início da Era II (33,3%) e o céu poluído some entre 15% e 45%.
+
+- **Paralaxe em 3 camadas:** horizonte (fileira de trás vira a silhueta da cidade `FINAL_SKYLINE`),
+  camada média 0,5 (prédios EcoUrbe alternados com árvores, `FINAL_MID_SPECS`, marco Edifício Art Nouveau
+  1 a cada `FINAL_MARCO_A_CADA` trechos) e borda 0,8 (postes, floreiras, bancos, bicicletário, totem,
+  estação e árvores, `FINAL_MARGIN_SPECS`). A peça antiga afunda enquanto a nova cresce.
+- **Obstáculos novos** (`FINAL_OBSTACLE_SPECS`): por cima = Lótus Solar, Canteiro de Biorretenção, Compostor;
+  por baixo = Passarela de Fauna, Pérgola, Viaduto Pomar, Arco Trepadeira; de lado = Torre Eólica, Cipreste
+  Fotovoltaico, Torre Warka, Fotobiorreator. A colisão foi medida nos próprios sprites (vão livre dos
+  portais ≥ 110; a Torre Eólica só tem o mastro na faixa de voo, por isso é estreita).
+- **Coletável x colisão:** no Difícil, tudo que se pega tem halo ciano-dourado pulsante (o Normal não tem
+  brilho); nos dois modos, tudo que colide tem chevrons
+  âmbar pintados no chão da faixa e o friso dourado no modelo.
+- **Decoração móvel (só visual):** dirigível solar e balões cruzando o céu, pássaros, bonde VLT no horizonte.
+- **Chão com textura:** prado florido nas laterais (`assets/ground/meadow.png`) e pista de piso drenante
+  com meio-fio dourado (`assets/ground/paver_road.png`).
+- **Assets:** `assets/era_final_sprites/` (33 sprites renderizados dos modelos 3D EcoUrbe) e
+  `assets/era_final_fx/` (halo, chevrons, ícones). Ambas as pastas entram no `.spec`.
+- **Testes:** `tests/test_era_final.py`; modos em `tests/test_modos.py` (14). Sem as texturas novas, o jogo volta ao polígono liso.
 
 ## Modelos do guia aplicados (21/10/2026)
 
@@ -657,8 +707,8 @@ eco_runner/
 │   ├── plane_patterns/     15 texturas de padrões de pintura do estúdio
 │   ├── maneuvers/          curvas das manobras (maneuvers.json)
 │   ├── trash_sprites/      4 modelos de lixo coletáveis
-│   ├── solarpunk_sprites/  10 árvores (eras III e IV)
-│   ├── dieselpunk_sprites/ 8 props (margens das eras I e II e obstáculos)
+│   ├── solarpunk_sprites/  10 árvores (Era II)
+│   ├── dieselpunk_sprites/ 8 props (margens da Era I e obstáculos)
 │   ├── powerup_sprites/    escudo, ímã e reparo
 │   ├── scenario_sprites/   31 peças: 28 do kit Dieselpunk_Scenario e 3 do guia (margens e fileira de fundo)
 │   ├── skyline_sprites/    silhuetas do horizonte (kit Dieselpunk_Scenario)
@@ -716,8 +766,8 @@ Os testes automáticos não substituem voar de verdade. Depois de cada build, co
 15. Mova o avião de um lado para o outro: a pista desliza mais que as margens, a fileira de fundo menos que a da borda, e as silhuetas do horizonte e o céu quase não se movem.
 16. Durante o voo, as faixas da pista e os objetos das margens deslizam sem piscar nem trocar de lugar, e os objetos surgem aos poucos na neblina, sem aparecer de repente no fim da pista.
 17. Com a restauração subindo, o céu poluído e a fumaça somem aos poucos e as silhuetas do horizonte viram árvores.
-18. Ao passar de 50% de restauração, o chão fora da pista vira grama do avião até onde as árvores começam; a grama desliza junto com a pista e chega mais longe conforme a restauração sobe.
-19. Na fase inicial, o chão fora da pista é concreto sujo (placas, juntas, manchas de óleo e rachaduras) e desliza junto com a pista; depois de 50%, o concreto continua só além da grama.
+18. Ao passar de 33,3% de restauração, o chão fora da pista vira grama do avião até onde as árvores começam; a grama desliza junto com a pista e chega mais longe conforme a restauração sobe.
+19. Na fase inicial, o chão fora da pista é concreto sujo (placas, juntas, manchas de óleo e rachaduras) e desliza junto com a pista; depois de 33,3%, o concreto continua só além da grama.
 20. Numa cópia, apague `_internal\assets\plane_uv` e `_internal\assets\maneuvers`: a Oficina continua abrindo (o padrão não aparece e o avião fica com a cor) e as manobras usam as curvas de reserva.
 21. Com a câmera (V no hangar), a barra de calibração aparece no status; depois de calibrar, "pessoa detectada" (modo corpo) ou "mão detectada" (modo uma mão) aparece.
 22. Modo corpo: inclinar o corpo de leve troca o avião e o piloto no hangar, um passo por inclinação; levantar a mão direita decola; a mão esquerda abre a Oficina.

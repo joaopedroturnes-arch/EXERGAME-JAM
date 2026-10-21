@@ -32,6 +32,16 @@ def game(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def modo_dificil_por_padrao(monkeypatch):
+    """A suíte antiga descreve o jogo original, que hoje é o modo Difícil.
+
+    Para o jogador sem configuração salva o padrão é o Normal; os testes do Normal
+    trocam o modo explicitamente (tests/test_modos.py).
+    """
+    monkeypatch.setattr(eco_runner, "DEFAULT_GAME_MODE", "dificil")
+
+
+@pytest.fixture(autouse=True)
 def isolated_data_dir(tmp_path, monkeypatch):
     """Isola recorde/relatórios em tmp_path e impede leitura do save legado do projeto."""
     data_dir = tmp_path / "dados"

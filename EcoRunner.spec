@@ -21,7 +21,7 @@ OPTIONAL_DIRS = [
     "solarpunk_sprites", "trash_sprites", "plane_sprites", "plane_menu",
     "scenario_sprites", "skyline_sprites", "atmosphere", "ground",
     "plane_paint", "plane_menu_paint", "plane_uv", "plane_menu_uv",
-    "plane_patterns", "maneuvers", "pose_model",
+    "plane_patterns", "maneuvers", "pose_model", "era_final_sprites", "era_final_fx",
 ]
 
 datas = []
